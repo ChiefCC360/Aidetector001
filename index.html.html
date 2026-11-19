@@ -1,0 +1,2161 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>學生報告 AI 協作度與文本特徵檢測分析器 (v5.3)</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- 引入 PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- 引入 Mammoth.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <!-- 引入 JSZip -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- 引入 Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- 引入 Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background-color: #f8fafc;
+            color: #1e293b;
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .heatmap-para {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            border-left-width: 4px;
+        }
+        .heatmap-para:hover {
+            transform: translateX(3px);
+            box-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.08);
+        }
+        .heatmap-para.selected {
+            box-shadow: 0 0 0 2px #4f46e5, 0 8px 16px -4px rgba(79, 70, 229, 0.15);
+        }
+        .batch-row.active-report {
+            background-color: #eef2ff;
+            border-left: 4px solid #4f46e5;
+        }
+        mark[title] {
+            cursor: help;
+            transition: filter 0.15s ease;
+        }
+        mark[title]:hover {
+            filter: brightness(0.92);
+        }
+        @media print {
+            .no-print { display: none !important; }
+            body { background-color: #ffffff; }
+            .print-break-inside { break-inside: avoid; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- 頂部導覽列 -->
+    <header class="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-30 no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="bg-indigo-600 p-2 rounded-lg shadow-inner">
+                    <i data-lucide="scan-text" class="w-6 h-6 text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-base sm:text-lg font-bold tracking-tight flex items-center gap-2">
+                        學術報告 AI 協作度鑑識分析器
+                        <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                            v5.3 精準色塊與多模態鑑識版
+                        </span>
+                    </h1>
+                    <p class="text-xs text-slate-400 hidden sm:block">100% 瀏覽器本地運算 · 多檔批次 / PPTX / PDF / Word / 全圖投影片與以圖搜圖查核</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-2 sm:space-x-3">
+                <span class="inline-flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2.5 py-1.5 rounded-full">
+                    <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+                    <span class="hidden md:inline">資料不離機 · 隱私安全</span>
+                    <span class="md:hidden">本地安全</span>
+                </span>
+                <button onclick="window.print()" id="printBtn" class="hidden items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition cursor-pointer">
+                    <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+                    匯出報告
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主內容區 -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
+
+        <!-- 步驟 1：匯入與設定區 -->
+        <section class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden no-print">
+            <div class="p-5 sm:p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                        <span class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center">1</span>
+                        匯入學生報告（支援多檔批次）或貼上文本
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-0.5">支援一次選取或拖曳多份 <code class="bg-slate-100 px-1 py-0.5 rounded text-slate-700">.pptx</code>、<code class="bg-slate-100 px-1 py-0.5 rounded text-slate-700">.pdf</code>、<code class="bg-slate-100 px-1 py-0.5 rounded text-slate-700">.docx</code>、<code class="bg-slate-100 px-1 py-0.5 rounded text-slate-700">.txt</code> 與投影片圖片（<code class="bg-slate-100 px-1 py-0.5 rounded text-slate-700">.jpg/.png/.webp</code>）。</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-xs text-slate-400">測試範例：</span>
+                    <button type="button" onclick="loadBatchSample()" class="px-3 py-1.5 text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg shadow-sm transition cursor-pointer flex items-center gap-1">
+                        <i data-lucide="folder-kanban" class="w-3.5 h-3.5"></i> 一鍵載入全班 3 份範例
+                    </button>
+                    <button type="button" onclick="loadSample('hybrid')" class="px-2.5 py-1.5 text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition cursor-pointer flex items-center gap-1">
+                        <i data-lucide="highlighter" class="w-3.5 h-3.5"></i> 測試人工排版瑕疵高亮
+                    </button>
+                </div>
+            </div>
+
+            <div class="p-5 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <!-- 左側：多檔案拖曳與實體上傳按鈕區 -->
+                <div class="lg:col-span-5 flex flex-col">
+                    <div id="dropZone" class="flex-grow border-2 border-dashed border-slate-300 hover:border-indigo-500 bg-slate-50/70 hover:bg-indigo-50/30 rounded-xl p-6 flex flex-col items-center justify-center text-center transition cursor-pointer min-h-[235px]">
+                        <input type="file" id="fileInput" accept=".pdf,.docx,.pptx,.ppt,.txt,.jpg,.jpeg,.png,.webp" multiple class="hidden">
+                        <div class="w-12 h-12 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center mb-3 pointer-events-none">
+                            <i data-lucide="upload-cloud" class="w-6 h-6"></i>
+                        </div>
+                        <p class="text-sm font-bold text-slate-800 pointer-events-none">點擊選取多個檔案，或將整批報告拖曳至此</p>
+                        <p class="text-xs text-slate-500 mt-1 pointer-events-none">支援 PPTX、PDF、Word (.docx)、純文字 (.txt) 及投影片圖片 (.jpg / .png)</p>
+                        <p class="text-[11px] text-indigo-600 font-medium mt-1 pointer-events-none">✨ 支援全版面圖片投影片雙軌鑑識與一鍵以圖搜圖查核</p>
+
+                        <!-- 明確的實體上傳按鈕 -->
+                        <button type="button" id="selectFilesBtn" onclick="event.stopPropagation(); document.getElementById('fileInput').click();" class="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-1.5 cursor-pointer">
+                            <i data-lucide="folder-open" class="w-4 h-4"></i>
+                            <span>選擇並上傳檔案（支援多選）</span>
+                        </button>
+
+                        <!-- 批次解析進度條 -->
+                        <div id="batchProgressWrap" class="w-full max-w-xs mt-4 hidden pointer-events-none">
+                            <div class="flex justify-between text-[11px] font-medium text-indigo-700 mb-1">
+                                <span id="batchProgressText">正在解析檔案...</span>
+                                <span id="batchProgressPct">0%</span>
+                            </div>
+                            <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                                <div id="batchProgressBar" class="bg-indigo-600 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                            </div>
+                        </div>
+
+                        <div id="fileStatus" class="mt-3 hidden items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded-lg shadow-sm pointer-events-none">
+                            <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+                            <span id="fileNameDisplay">已載入檔案</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右側：文字預覽與直接編輯區 -->
+                <div class="lg:col-span-7 flex flex-col">
+                    <div class="flex items-center justify-between mb-1.5">
+                        <label for="textInput" class="text-xs font-semibold text-slate-600" id="textEditorLabel">當前檢視文本預覽 / 直接貼上單篇文字：</label>
+                        <div class="flex items-center gap-3">
+                            <span id="charCount" class="text-xs text-slate-400">0 字</span>
+                            <button type="button" onclick="clearAllData()" class="text-xs text-slate-400 hover:text-rose-600 transition cursor-pointer">清空全部報告</button>
+                        </div>
+                    </div>
+                    <textarea id="textInput" rows="8" placeholder="請在左側上傳多份 PPTX / PDF / Word / 投影片圖片，或直接在此貼上學生的報告全文..." class="w-full rounded-xl border border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 p-3.5 text-sm text-slate-700 leading-relaxed resize-y"></textarea>
+                </div>
+            </div>
+
+            <!-- 進階設定（選填 Gemini API Key） & 執行按鈕列 -->
+            <div class="px-5 sm:px-6 py-4 bg-slate-50 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div class="flex-grow">
+                    <button type="button" onclick="toggleApiDrawer()" class="text-xs font-medium text-slate-600 hover:text-indigo-600 flex items-center gap-1.5 cursor-pointer">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5 text-indigo-500"></i>
+                        <span>進階選項：啟用 Gemini API 深度語意與多模態視覺審計（選填）</span>
+                        <i data-lucide="chevron-down" id="apiChevron" class="w-3.5 h-3.5 transition-transform"></i>
+                    </button>
+                    <div id="apiDrawer" class="hidden mt-3 max-w-xl">
+                        <div class="flex flex-col sm:flex-row gap-2">
+                            <input type="password" id="geminiApiKey" placeholder="輸入您的 Gemini API Key (AIzaSy...)" class="flex-grow px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-indigo-500">
+                            <span class="text-[11px] text-slate-400 flex items-center">Key 僅暫存於本地記憶體</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3 self-end sm:self-auto">
+                    <button type="button" id="analyzeBtn" onclick="runSingleTextAnalysis()" class="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-sm font-semibold rounded-xl shadow-sm hover:shadow transition flex items-center gap-2 cursor-pointer">
+                        <i data-lucide="cpu" class="w-4 h-4"></i>
+                        <span>分析文字框內容</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 訊息提示框 -->
+        <div id="toastBox" class="hidden fixed bottom-5 right-5 z-50 max-w-md bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl border border-slate-700 flex items-center gap-3 text-sm transition-all">
+            <i data-lucide="info" class="w-5 h-5 text-indigo-400 shrink-0"></i>
+            <span id="toastMessage">提示訊息</span>
+        </div>
+
+        <!-- 全班批次總覽儀表板 -->
+        <section id="batchDashboard" class="hidden bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden print-break-inside">
+            <div class="p-5 sm:p-6 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="px-2.5 py-0.5 rounded-md bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 text-xs font-bold">BATCH OVERVIEW</span>
+                        <h2 class="text-lg font-bold tracking-tight">全班批次報告分析總覽</h2>
+                    </div>
+                    <p class="text-xs text-slate-300 mt-1">點擊下方列表中的任一份報告，即可於下方展開逐段熱力圖、綠色人工瑕疵標記與以圖搜圖查核。</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2.5 no-print">
+                    <button type="button" onclick="document.getElementById('fileInput').click()" class="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-xl border border-white/20 transition flex items-center gap-1.5 cursor-pointer">
+                        <i data-lucide="file-plus-2" class="w-4 h-4"></i> 繼續新增檔案
+                    </button>
+                    <button type="button" onclick="exportBatchCSV()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl shadow-sm transition flex items-center gap-1.5 cursor-pointer">
+                        <i data-lucide="download" class="w-4 h-4"></i> 匯出全班 CSV 紀錄表
+                    </button>
+                </div>
+            </div>
+
+            <!-- 全班統計摘要 4 卡片 -->
+            <div class="p-5 sm:p-6 border-b border-slate-100 grid grid-cols-2 lg:grid-cols-4 gap-4 bg-slate-50/60">
+                <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs">
+                    <span class="text-xs font-medium text-slate-500 flex items-center justify-between">
+                        全班平均 AI 協作度
+                        <i data-lucide="bar-chart-3" class="w-4 h-4 text-indigo-500"></i>
+                    </span>
+                    <div class="mt-2 flex items-baseline gap-2">
+                        <strong id="batchAvgAi" class="text-2xl font-extrabold text-slate-800">0%</strong>
+                        <span id="batchTotalFiles" class="text-xs text-slate-400">共 0 份報告</span>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-rose-200/80 shadow-2xs">
+                    <span class="text-xs font-medium text-rose-700 flex items-center justify-between">
+                        高度疑似 AI 主導 (≥70%)
+                        <i data-lucide="alert-triangle" class="w-4 h-4 text-rose-500"></i>
+                    </span>
+                    <div class="mt-2 flex items-baseline gap-2">
+                        <strong id="batchHighCount" class="text-2xl font-extrabold text-rose-600">0 份</strong>
+                        <span class="text-xs text-rose-400">建議重點檢核</span>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-amber-200/80 shadow-2xs">
+                    <span class="text-xs font-medium text-amber-700 flex items-center justify-between">
+                        人機協作 / 潤飾 (45-69%)
+                        <i data-lucide="sparkles" class="w-4 h-4 text-amber-500"></i>
+                    </span>
+                    <div class="mt-2 flex items-baseline gap-2">
+                        <strong id="batchHybridCount" class="text-2xl font-extrabold text-amber-600">0 份</strong>
+                        <span class="text-xs text-amber-500">AI 摘要或機翻輔助</span>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-emerald-200/80 shadow-2xs">
+                    <span class="text-xs font-medium text-emerald-700 flex items-center justify-between">
+                        人類原創 / 文獻摘錄 (&lt;45%)
+                        <i data-lucide="user-check" class="w-4 h-4 text-emerald-500"></i>
+                    </span>
+                    <div class="mt-2 flex items-baseline gap-2">
+                        <strong id="batchHumanCount" class="text-2xl font-extrabold text-emerald-600">0 份</strong>
+                        <span class="text-xs text-emerald-500">自主撰寫為主</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 篩選與排序控制列 -->
+            <div class="px-5 sm:px-6 py-3 bg-white border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 no-print">
+                <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                    <span class="text-slate-400 mr-1">風險篩選：</span>
+                    <button type="button" onclick="setBatchFilter('all')" class="batch-filter-btn px-2.5 py-1 rounded-lg bg-slate-800 text-white font-medium cursor-pointer" data-bfilter="all">全部顯示</button>
+                    <button type="button" onclick="setBatchFilter('high')" class="batch-filter-btn px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 font-medium cursor-pointer" data-bfilter="high">高風險 (≥70%)</button>
+                    <button type="button" onclick="setBatchFilter('medium')" class="batch-filter-btn px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 font-medium cursor-pointer" data-bfilter="medium">人機協作 (45-69%)</button>
+                    <button type="button" onclick="setBatchFilter('low')" class="batch-filter-btn px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-medium cursor-pointer" data-bfilter="low">人類主導 (&lt;45%)</button>
+                </div>
+                <div class="flex items-center gap-2 text-xs">
+                    <label for="batchSortSelect" class="text-slate-400">排序依據：</label>
+                    <select id="batchSortSelect" onchange="renderBatchTable()" class="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 font-medium focus:outline-none focus:border-indigo-500">
+                        <option value="score_desc">AI 協作佔比（由高到低）</option>
+                        <option value="score_asc">AI 協作佔比（由低到高）</option>
+                        <option value="name_asc">檔案名稱（A → Z）</option>
+                        <option value="order_asc">匯入順序</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- 學生報告總覽表格 -->
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                            <th class="py-3 px-4 sm:px-6">學生報告檔案名稱</th>
+                            <th class="py-3 px-3">格式</th>
+                            <th class="py-3 px-3 text-right">規模 (字數/單元)</th>
+                            <th class="py-3 px-3 text-right">AI 總協作度</th>
+                            <th class="py-3 px-4 hidden md:table-cell">組成比例分佈 (AI直出 / 協作 / 人類)</th>
+                            <th class="py-3 px-4">綜合評估判定</th>
+                            <th class="py-3 px-4 text-right no-print">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="batchTableBody" class="divide-y divide-slate-100 text-xs"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 步驟 2：單篇報告詳細分析儀表板 -->
+        <div id="resultsDashboard" class="hidden space-y-6">
+
+            <!-- 當前檢視報告標題橫幅 -->
+            <div class="bg-indigo-50 border border-indigo-200/80 rounded-2xl px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div class="flex items-center gap-2.5">
+                    <span class="p-1.5 bg-indigo-600 text-white rounded-lg">
+                        <i data-lucide="file-search" class="w-4 h-4"></i>
+                    </span>
+                    <div>
+                        <span class="text-[11px] font-semibold text-indigo-600 uppercase tracking-wider block">目前詳細檢視報告</span>
+                        <h2 id="currentReportTitle" class="text-sm sm:text-base font-bold text-slate-900">未命名報告</h2>
+                    </div>
+                </div>
+                <span id="currentReportBadge" class="self-start sm:self-auto px-2.5 py-1 rounded-md bg-white text-indigo-700 border border-indigo-200 text-xs font-semibold">
+                    單篇深度鑑識視圖
+                </span>
+            </div>
+
+            <!-- 頂部總覽卡片列 -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 print-break-inside">
+                <!-- 卡片 A：AI 協作度總體佔比 -->
+                <div class="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 sm:p-6 flex flex-col justify-between">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                                <i data-lucide="pie-chart" class="w-4 h-4 text-indigo-600"></i>
+                                文本來源組成與 AI 協作比例預估
+                            </h3>
+                            <p class="text-xs text-slate-500 mt-0.5" id="docMetaSummary">共分析 0 個有效段落 · 總字數 0 字</p>
+                        </div>
+                        <span id="overallVerdictBadge" class="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                            中高度 AI 協作
+                        </span>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-12 gap-6 items-center my-auto">
+                        <div class="sm:col-span-5 relative flex items-center justify-center h-48">
+                            <canvas id="compositionChart"></canvas>
+                            <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                <span class="text-[11px] font-medium text-slate-400">AI 協作總佔比</span>
+                                <span id="totalAiPercent" class="text-3xl font-extrabold text-slate-800">0%</span>
+                            </div>
+                        </div>
+
+                        <div class="sm:col-span-7 space-y-3">
+                            <div class="p-3 rounded-xl bg-rose-50/70 border border-rose-100">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="text-xs font-bold text-rose-800 flex items-center gap-1.5">
+                                        <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                                        高度疑似 AI 直接生成 / 全圖烘焙
+                                    </span>
+                                    <span id="highAiPct" class="text-sm font-extrabold text-rose-700">0%</span>
+                                </div>
+                                <div class="w-full bg-rose-200/60 rounded-full h-1.5">
+                                    <div id="highAiBar" class="bg-rose-500 h-1.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+                                </div>
+                                <p class="text-[11px] text-rose-600/90 mt-1">具備典型 LLM 結構、跨頁模組對稱，或為 AI 烘焙圖文投影片。</p>
+                            </div>
+
+                            <div class="p-3 rounded-xl bg-amber-50/70 border border-amber-100">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="text-xs font-bold text-amber-800 flex items-center gap-1.5">
+                                        <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                                        人機協作摘要 / 潤飾
+                                    </span>
+                                    <span id="hybridPct" class="text-sm font-extrabold text-amber-700">0%</span>
+                                </div>
+                                <div class="w-full bg-amber-200/60 rounded-full h-1.5">
+                                    <div id="hybridBar" class="bg-amber-500 h-1.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+                                </div>
+                                <p class="text-[11px] text-amber-700/90 mt-1">含真實個案細節或個人經歷，但經 AI 進行結構重組、機翻或擴寫。</p>
+                            </div>
+
+                            <div class="p-3 rounded-xl bg-emerald-50/70 border border-emerald-100">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
+                                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                                        人類原創 / 教材剪貼 / 純圖片分享
+                                    </span>
+                                    <span id="humanPct" class="text-sm font-extrabold text-emerald-700">0%</span>
+                                </div>
+                                <div class="w-full bg-emerald-200/60 rounded-full h-1.5">
+                                    <div id="humanBar" class="bg-emerald-500 h-1.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+                                </div>
+                                <p class="text-[11px] text-emerald-700/90 mt-1">句長起伏自然、含手動排版/標點瑕疵，或為無文字之純照片分享。</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 卡片 B：四大文本指紋雷達圖 -->
+                <div class="lg:col-span-5 bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 sm:p-6 flex flex-col justify-between">
+                    <div>
+                        <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                            <i data-lucide="radar" class="w-4 h-4 text-indigo-600"></i>
+                            LLM 語言與版面指紋維度剖析
+                        </h3>
+                        <p class="text-xs text-slate-500 mt-0.5">數值越高代表該項特徵越接近大型語言模型或 AI 簡報生成器</p>
+                    </div>
+                    <div class="relative h-56 w-full flex items-center justify-center my-2">
+                        <canvas id="radarChart"></canvas>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 text-[11px] text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                        <div>• 句長均勻度：<strong id="metricUniformity" class="text-slate-800">-</strong></div>
+                        <div>• 模板結構詞：<strong id="metricTemplates" class="text-slate-800">-</strong></div>
+                        <div>• 防禦性語氣：<strong id="metricHedging" class="text-slate-800">-</strong></div>
+                        <div>• 模組對稱性：<strong id="metricStructure" class="text-slate-800">-</strong></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI 深度語意與多模態視覺審計報告區塊 -->
+            <div id="geminiAuditCard" class="hidden bg-gradient-to-r from-indigo-900 to-slate-900 text-white rounded-2xl shadow-md p-5 sm:p-6 print-break-inside">
+                <div class="flex items-center gap-2 mb-3">
+                    <span class="p-1.5 bg-indigo-500/30 rounded-lg border border-indigo-400/30">
+                        <i data-lucide="sparkles" class="w-4 h-4 text-indigo-300"></i>
+                    </span>
+                    <h3 class="text-base font-bold">Gemini 深度語意與視覺審計補充意見</h3>
+                </div>
+                <div id="geminiAuditContent" class="text-sm text-slate-200 leading-relaxed space-y-2">
+                    正在進行深度語意分析...
+                </div>
+            </div>
+
+            <!-- 教學回饋與講評建議生成器 -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 sm:p-6 print-break-inside">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                    <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                        <i data-lucide="graduation-cap" class="w-5 h-5 text-indigo-600"></i>
+                        給授課教師的綜合診斷與講評建議
+                    </h3>
+                    <button type="button" onclick="copyFeedback()" class="self-start sm:self-auto px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition flex items-center gap-1.5 cursor-pointer no-print">
+                        <i data-lucide="copy" class="w-3.5 h-3.5"></i> 複製講評建議
+                    </button>
+                </div>
+                <div id="teacherFeedbackBox" class="p-4 rounded-xl bg-slate-50 border border-slate-200/70 text-sm text-slate-700 leading-relaxed space-y-2"></div>
+            </div>
+
+            <!-- 步驟 3：逐段互動式熱力圖與鑑識詳情 -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                <!-- 左側：逐段熱力圖列表 -->
+                <div class="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+                    <div class="p-4 sm:p-5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2 bg-slate-50/50">
+                        <div>
+                            <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                                <i data-lucide="list-filter" class="w-4 h-4 text-indigo-600"></i>
+                                逐段 / 逐頁 AI 特徵熱力圖（點擊查看理由與色塊標記）
+                            </h3>
+                        </div>
+                        <div class="flex items-center gap-1.5 text-xs no-print">
+                            <button type="button" onclick="filterParagraphs('all')" class="filter-btn active px-2.5 py-1 rounded-md bg-slate-800 text-white font-medium cursor-pointer" data-filter="all">全部</button>
+                            <button type="button" onclick="filterParagraphs('high')" class="filter-btn px-2.5 py-1 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 font-medium cursor-pointer" data-filter="high">高疑似 AI</button>
+                            <button type="button" onclick="filterParagraphs('medium')" class="filter-btn px-2.5 py-1 rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 font-medium cursor-pointer" data-filter="medium">人機混合</button>
+                            <button type="button" onclick="filterParagraphs('low')" class="filter-btn px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-medium cursor-pointer" data-filter="low">偏向人類</button>
+                        </div>
+                    </div>
+
+                    <div id="paragraphList" class="p-4 sm:p-5 space-y-3 max-h-[720px] overflow-y-auto"></div>
+                </div>
+
+                <!-- 右側：選定段落／全圖投影片鑑識證據詳情面板 -->
+                <div class="lg:col-span-5 lg:sticky lg:top-20 bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 sm:p-6 print-break-inside">
+                    <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                        <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                            <i data-lucide="microscope" class="w-4 h-4 text-indigo-600"></i>
+                            段落 / 投影片鑑識證據詳情
+                        </h3>
+                        <span id="detailParaIndex" class="text-xs font-semibold px-2.5 py-1 rounded-md bg-slate-100 text-slate-600">第 1 段</span>
+                    </div>
+
+                    <div id="detailContent" class="space-y-4">
+                        <!-- 分數與判定標籤 -->
+                        <div class="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                            <div>
+                                <span class="text-xs text-slate-500 block">本單元 AI 生成／協作嫌疑度</span>
+                                <span id="detailCategoryLabel" class="text-sm font-bold text-slate-800 mt-0.5 block">-</span>
+                            </div>
+                            <div class="text-right">
+                                <span id="detailScore" class="text-2xl font-extrabold text-indigo-600">0%</span>
+                            </div>
+                        </div>
+
+                        <!-- 全圖投影片影像預覽、以圖搜圖與人工覆核區 -->
+                        <div id="detailImageSection" class="hidden space-y-3 p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-200/80">
+                            <div class="flex items-center justify-between">
+                                <span class="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                                    <i data-lucide="image" class="w-4 h-4 text-indigo-600"></i>
+                                    投影片原圖預覽與來源查核
+                                </span>
+                                <span id="detailImageDims" class="text-[11px] font-mono text-indigo-600 bg-white px-2 py-0.5 rounded border border-indigo-200">16:9</span>
+                            </div>
+                            <div class="rounded-lg overflow-hidden border border-slate-300 bg-slate-900">
+                                <img id="detailImagePreview" src="" alt="投影片原圖預覽" class="w-full h-auto max-h-52 object-contain mx-auto">
+                            </div>
+                            <!-- 一鍵以圖搜圖按鈕列 -->
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 no-print">
+                                <button type="button" onclick="searchWithGoogleLens()" class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer">
+                                    <i data-lucide="search" class="w-3.5 h-3.5"></i>
+                                    <span>複製圖片並開 Google 搜圖</span>
+                                </button>
+                                <button type="button" onclick="searchWithBingVisual()" class="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer">
+                                    <i data-lucide="globe" class="w-3.5 h-3.5 text-sky-600"></i>
+                                    <span>開啟 Bing 視覺搜尋</span>
+                                </button>
+                            </div>
+                            <button type="button" onclick="downloadCurrentSlideImage()" class="w-full py-1.5 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 text-[11px] font-medium rounded-lg transition flex items-center justify-center gap-1 cursor-pointer no-print">
+                                <i data-lucide="download" class="w-3 h-3"></i> 下載此頁原始圖檔 (.png) 供手動上傳比對
+                            </button>
+                            <!-- 教師人工改判覆核區 -->
+                            <div class="pt-2 border-t border-indigo-200/70 no-print">
+                                <span class="text-[11px] font-bold text-slate-600 block mb-1.5">教師查核後人工改判（即時重算全篇佔比）：</span>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button type="button" onclick="overrideImageVerdict('human')" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold rounded-lg transition cursor-pointer">
+                                        ✓ 改判為網路原圖（非 AI）
+                                    </button>
+                                    <button type="button" onclick="overrideImageVerdict('ai')" class="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold rounded-lg transition cursor-pointer">
+                                        ⚠ 改判為 AI 生成圖文
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 數據指標小卡 -->
+                        <div id="detailMetricsGrid" class="grid grid-cols-3 gap-2 text-center">
+                            <div class="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                                <span class="text-[11px] text-slate-400 block">有效字數</span>
+                                <strong id="detailCharLen" class="text-sm text-slate-700">0 字</strong>
+                            </div>
+                            <div class="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                                <span class="text-[11px] text-slate-400 block">平均句長</span>
+                                <strong id="detailAvgSent" class="text-sm text-slate-700">0 字</strong>
+                            </div>
+                            <div class="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                                <span class="text-[11px] text-slate-400 block">句長標準差</span>
+                                <strong id="detailStdSent" class="text-sm text-slate-700">0.0</strong>
+                            </div>
+                        </div>
+
+                        <!-- 具體判定理由列表 -->
+                        <div>
+                            <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">具體判定依據與指紋特徵：</h4>
+                            <ul id="detailReasons" class="space-y-2 text-xs text-slate-600"></ul>
+                        </div>
+
+                        <!-- 命中關鍵詞高亮預覽 -->
+                        <div id="detailTextPreviewWrap">
+                            <div class="flex items-center justify-between mb-2">
+                                <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider">文本特徵標記預覽：</h4>
+                                <span class="text-[10px] text-slate-400">游標移至色塊可查看判定類別</span>
+                            </div>
+                            <div id="detailHighlightedText" class="p-3.5 rounded-xl bg-slate-50 border border-slate-200/70 text-xs text-slate-700 leading-relaxed max-h-64 overflow-y-auto whitespace-pre-line"></div>
+                            <div class="flex flex-wrap items-center gap-3 mt-2.5 text-[11px] text-slate-500">
+                                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-rose-200 border border-rose-300 inline-block"></span> AI 模板/簡報結構詞</span>
+                                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-amber-200 border border-amber-300 inline-block"></span> 防禦性助動詞</span>
+                                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-emerald-200 border border-emerald-400 inline-block"></span> 人工複製貼上/排版瑕疵</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 頁尾 -->
+    <footer class="bg-white border-t border-slate-200 py-5 mt-12 no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-2">
+            <p>學術報告 AI 協作度鑑識分析器 (v5.3) · 採用多維度自然語言統計特徵與全圖排版結構分析</p>
+            <p>註：本工具提供文本與視覺統計指紋作為教學評估輔助參考，建議結合口頭提問綜合評量。</p>
+        </div>
+    </footer>
+
+    <script>
+        // 初始化 Lucide 圖示與 PDF.js Worker
+        lucide.createIcons();
+        if (window.pdfjsLib) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+
+        // 全域狀態變數
+        let batchReports = [];
+        let activeReportIndex = -1;
+        let currentBatchFilter = 'all';
+        let analyzedParagraphs = [];
+        let currentSelectedParaIdx = 0;
+        let compositionChartInstance = null;
+        let radarChartInstance = null;
+
+        function showToast(msg, isError = false) {
+            const box = document.getElementById('toastBox');
+            const text = document.getElementById('toastMessage');
+            text.textContent = msg;
+            box.classList.remove('hidden');
+            box.classList.toggle('border-rose-500', isError);
+            box.classList.toggle('border-slate-700', !isError);
+            clearTimeout(window.toastTimer);
+            window.toastTimer = setTimeout(() => box.classList.add('hidden'), 4200);
+        }
+
+        function toggleApiDrawer() {
+            document.getElementById('apiDrawer').classList.toggle('hidden');
+            document.getElementById('apiChevron').classList.toggle('rotate-180');
+        }
+
+        const textInput = document.getElementById('textInput');
+        textInput.addEventListener('input', updateCharCount);
+
+        function updateCharCount() {
+            document.getElementById('charCount').textContent = `${textInput.value.trim().length.toLocaleString()} 字`;
+        }
+
+        function clearAllData() {
+            textInput.value = '';
+            updateCharCount();
+            batchReports = [];
+            activeReportIndex = -1;
+            analyzedParagraphs = [];
+            document.getElementById('fileStatus').classList.add('hidden');
+            document.getElementById('fileInput').value = '';
+            document.getElementById('batchDashboard').classList.add('hidden');
+            document.getElementById('resultsDashboard').classList.add('hidden');
+            document.getElementById('printBtn').classList.add('hidden');
+            document.getElementById('textEditorLabel').textContent = '當前檢視文本預覽 / 直接貼上單篇文字：';
+            showToast('已清空所有報告與分析紀錄。');
+        }
+
+        // 全域防呆：阻止瀏覽器預設拖放開啟新分頁行為
+        window.addEventListener('dragover', (e) => e.preventDefault(), false);
+        window.addEventListener('drop', (e) => e.preventDefault(), false);
+
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        let dragCounter = 0;
+
+        dropZone.addEventListener('click', (e) => {
+            if (e.target.closest('#selectFilesBtn')) return;
+            fileInput.click();
+        });
+
+        dropZone.addEventListener('dragenter', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounter++;
+            dropZone.classList.add('border-indigo-500', 'bg-indigo-50/70', 'ring-2', 'ring-indigo-300');
+        });
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounter--;
+            if (dragCounter <= 0) {
+                dragCounter = 0;
+                dropZone.classList.remove('border-indigo-500', 'bg-indigo-50/70', 'ring-2', 'ring-indigo-300');
+            }
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounter = 0;
+            dropZone.classList.remove('border-indigo-500', 'bg-indigo-50/70', 'ring-2', 'ring-indigo-300');
+
+            let droppedFiles = [];
+            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                droppedFiles = Array.from(e.dataTransfer.files);
+            } else if (e.dataTransfer && e.dataTransfer.items) {
+                for (let i = 0; i < e.dataTransfer.items.length; i++) {
+                    if (e.dataTransfer.items[i].kind === 'file') {
+                        const f = e.dataTransfer.items[i].getAsFile();
+                        if (f) droppedFiles.push(f);
+                    }
+                }
+            }
+            if (droppedFiles.length > 0) {
+                handleMultipleFiles(droppedFiles);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                handleMultipleFiles(Array.from(e.target.files));
+            }
+            e.target.value = '';
+        });
+
+        // ==========================================
+        // 視覺圖像指紋分析（區分 AI 烘焙文字投影片 vs 純照片分享）
+        // ==========================================
+        async function analyzeRasterImage(dataUrl, rawBytesHint = '') {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    const w = img.naturalWidth || 1280;
+                    const h = img.naturalHeight || 720;
+                    const ratio = w / h;
+                    const is16by9 = Math.abs(ratio - (16 / 9)) < 0.08;
+
+                    const canvas = document.createElement('canvas');
+                    const sampleW = 480;
+                    const sampleH = Math.max(200, Math.round(sampleW / ratio));
+                    canvas.width = sampleW;
+                    canvas.height = sampleH;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, sampleW, sampleH);
+
+                    const imgData = ctx.getImageData(0, 0, sampleW, sampleH).data;
+                    let highContrastTransitions = 0;
+                    let totalSamples = 0;
+
+                    const scanW = Math.floor(sampleW * 0.65);
+                    const scanH = Math.floor(sampleH * 0.75);
+                    for (let y = 10; y < scanH; y += 2) {
+                        for (let x = 10; x < scanW - 2; x += 2) {
+                            const idx1 = (y * sampleW + x) * 4;
+                            const idx2 = (y * sampleW + (x + 2)) * 4;
+                            const lum1 = 0.299 * imgData[idx1] + 0.587 * imgData[idx1 + 1] + 0.114 * imgData[idx1 + 2];
+                            const lum2 = 0.299 * imgData[idx2] + 0.587 * imgData[idx2 + 1] + 0.114 * imgData[idx2 + 2];
+                            if (Math.abs(lum1 - lum2) > 75) highContrastTransitions++;
+                            totalSamples++;
+                        }
+                    }
+                    const typographyEdgeDensity = totalSamples > 0 ? (highContrastTransitions / totalSamples) : 0;
+
+                    const lowerHint = rawBytesHint.toLowerCase();
+                    const hasAiMetadata = lowerHint.includes('gemini') || lowerHint.includes('imagen') || lowerHint.includes('google') || lowerHint.includes('synthid');
+                    const isLikelyBakedAiSlide = hasAiMetadata || (is16by9 && typographyEdgeDensity > 0.045);
+
+                    let aiScore = 20;
+                    let imageSubtype = 'pure_photo';
+                    let categoryLabel = '純圖片 / 情境分享投影片（待查核來源）';
+                    let reasons = [];
+
+                    if (isLikelyBakedAiSlide) {
+                        aiScore = hasAiMetadata ? 98 : 94;
+                        imageSubtype = 'baked_ai_slide';
+                        categoryLabel = '高度疑似 AI 全版面圖文生成（Gemini Notebook 模式）';
+                        reasons.push({
+                            type: 'ai',
+                            text: `偵測到標準 16:9 寬螢幕全版面點陣圖（${w}×${h}），且畫面內含高密度排版文字邊緣（銳利轉折密度 ${(typographyEdgeDensity * 100).toFixed(1)}%），高度符合 Gemini Notebook / NotebookLM 將「文字與插畫烘焙為單張圖片」的生成特徵。`
+                        });
+                        if (hasAiMetadata) {
+                            reasons.push({
+                                type: 'ai',
+                                text: `在影像檔案二進位中繼資料中偵測到 Google / Gemini 生成器標記指紋。`
+                            });
+                        }
+                    } else {
+                        aiScore = 20;
+                        imageSubtype = 'pure_photo';
+                        categoryLabel = '純圖片 / 情境分享投影片（非文字烘焙，建議以圖搜圖）';
+                        reasons.push({
+                            type: 'human',
+                            text: `本頁無原生文字框，且畫面未偵測到密集內嵌排版文字（銳利文字邊緣僅 ${(typographyEdgeDensity * 100).toFixed(1)}%），判定為學生單純放置照片或插畫進行情境分享，而非 AI 文字烘焙投影片。`
+                        });
+                        reasons.push({
+                            type: 'neutral',
+                            text: `建議使用右側「複製圖片並開 Google 搜圖」按鈕，確認此圖是否為網路流傳圖片或學生自拍作品。`
+                        });
+                    }
+
+                    resolve({
+                        dataUrl,
+                        width: w,
+                        height: h,
+                        ratioText: is16by9 ? `16:9 (${w}×${h})` : `${w}×${h}`,
+                        isLikelyBakedAiSlide,
+                        imageSubtype,
+                        aiScore,
+                        categoryLabel,
+                        reasons
+                    });
+                };
+                img.onerror = () => resolve(null);
+                img.src = dataUrl;
+            });
+        }
+
+        // ==========================================
+        // 檔案內容解析器（PPTX / PDF / DOCX / TXT / 圖片）
+        // ==========================================
+        async function extractContentFromFile(file) {
+            const fileName = file.name;
+            const ext = fileName.split('.').pop().toLowerCase();
+
+            if (ext === 'ppt') {
+                throw new Error('舊版 .ppt 格式無法直接在瀏覽器解析，請先另存為 .pptx 或 .pdf 後匯入。');
+            }
+
+            if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
+                const arrayBuffer = await file.arrayBuffer();
+                const bytes = new Uint8Array(arrayBuffer.slice(0, 8192));
+                let headerHint = '';
+                for (let i = 0; i < bytes.length; i++) {
+                    if (bytes[i] >= 32 && bytes[i] <= 126) headerHint += String.fromCharCode(bytes[i]);
+                }
+                const dataUrl = await new Promise((res) => {
+                    const reader = new FileReader();
+                    reader.onload = () => res(reader.result);
+                    reader.readAsDataURL(file);
+                });
+                const imgAnalysis = await analyzeRasterImage(dataUrl, headerHint);
+                return {
+                    segments: [{
+                        text: `[投影片圖片檔：${fileName}]（${imgAnalysis.isLikelyBakedAiSlide ? '偵測到內嵌排版文字之全圖生成投影片' : '無內嵌文字之純圖片/插畫檔'}）`,
+                        slideLabel: `[投影片圖片] ${fileName}`,
+                        isFullSlideImage: true,
+                        imageAnalysis: imgAnalysis
+                    }],
+                    rawText: `[投影片圖片檔：${fileName}]`,
+                    unitInfo: `單張圖片 (${imgAnalysis.ratioText})`,
+                    isPresentation: true
+                };
+            }
+
+            if (ext === 'txt') {
+                const text = await file.text();
+                return { segments: null, rawText: text, unitInfo: '純文字檔', isPresentation: false };
+            }
+
+            if (ext === 'pptx') {
+                const arrayBuffer = await file.arrayBuffer();
+                const zip = await JSZip.loadAsync(arrayBuffer);
+                const slideFiles = Object.keys(zip.files)
+                    .filter(name => /^ppt\/slides\/slide\d+\.xml$/i.test(name))
+                    .sort((a, b) => parseInt(a.match(/slide(\d+)\.xml/i)[1], 10) - parseInt(b.match(/slide(\d+)\.xml/i)[1], 10));
+
+                if (slideFiles.length === 0) throw new Error('無法在 PPTX 檔案中找到投影片內容。');
+
+                const parser = new DOMParser();
+                let segments = [];
+                let allTexts = [];
+
+                for (let i = 0; i < slideFiles.length; i++) {
+                    const slideNum = i + 1;
+                    const xmlStr = await zip.files[slideFiles[i]].async('string');
+                    const xmlDoc = parser.parseFromString(xmlStr, 'application/xml');
+
+                    const paragraphs = xmlDoc.getElementsByTagName('a:p');
+                    let pLines = [];
+                    for (let p of paragraphs) {
+                        const textNodes = p.getElementsByTagName('a:t');
+                        let lineStr = '';
+                        for (let t of textNodes) lineStr += t.textContent;
+                        if (lineStr.trim().length > 0) pLines.push(lineStr.trim());
+                    }
+                    const slideBody = pLines.join('\n').trim();
+                    const blips = xmlDoc.getElementsByTagName('a:blip');
+
+                    if (slideBody.length < 15 && blips.length > 0) {
+                        const relPath = `ppt/slides/_rels/slide${slideNum}.xml.rels`;
+                        let imageAnalysis = null;
+                        if (zip.files[relPath]) {
+                            const relXmlStr = await zip.files[relPath].async('string');
+                            const relDoc = parser.parseFromString(relXmlStr, 'application/xml');
+                            const embedId = blips[0].getAttribute('r:embed');
+                            const rels = relDoc.getElementsByTagName('Relationship');
+                            for (let r of rels) {
+                                if (r.getAttribute('Id') === embedId) {
+                                    const target = r.getAttribute('Target').replace('../', 'ppt/');
+                                    if (zip.files[target]) {
+                                        const imgBase64 = await zip.files[target].async('base64');
+                                        const imgExt = target.split('.').pop().toLowerCase();
+                                        const mime = imgExt === 'png' ? 'image/png' : 'image/jpeg';
+                                        imageAnalysis = await analyzeRasterImage(`data:${mime};base64,${imgBase64}`, '');
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+
+                        const descText = `[第 ${slideNum} 頁投影片：全版面圖片頁，無原生可編輯文字框]`;
+                        segments.push({
+                            text: descText,
+                            slideLabel: `[第 ${slideNum} 頁投影片]`,
+                            isFullSlideImage: true,
+                            imageAnalysis
+                        });
+                        allTexts.push(descText);
+                    } else if (slideBody.length > 0) {
+                        segments.push({
+                            text: slideBody,
+                            slideLabel: `[第 ${slideNum} 頁投影片]`,
+                            isFullSlideImage: false
+                        });
+                        allTexts.push(`[第 ${slideNum} 頁投影片]\n${slideBody}`);
+                    }
+                }
+
+                return {
+                    segments,
+                    rawText: allTexts.join('\n\n'),
+                    unitInfo: `${slideFiles.length} 頁投影片`,
+                    isPresentation: true
+                };
+            }
+
+            if (ext === 'pdf') {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                let segments = [];
+                let allTexts = [];
+
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const content = await page.getTextContent();
+                    let lastY = null;
+                    let pageStr = '';
+                    for (let item of content.items) {
+                        if (lastY !== null && Math.abs(item.transform[5] - lastY) > 12) pageStr += '\n';
+                        else if (lastY !== null) pageStr += ' ';
+                        pageStr += item.str;
+                        lastY = item.transform[5];
+                    }
+                    const cleanPageStr = pageStr.trim();
+
+                    if (cleanPageStr.length < 15) {
+                        const viewport = page.getViewport({ scale: 1.2 });
+                        const canvas = document.createElement('canvas');
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+                        const ctx = canvas.getContext('2d');
+                        await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+                        const dataUrl = canvas.toDataURL('image/png');
+                        const imageAnalysis = await analyzeRasterImage(dataUrl, '');
+
+                        const descText = `[第 ${i} 頁：全版面圖片頁，無可選取原生文字]`;
+                        segments.push({
+                            text: descText,
+                            slideLabel: `[第 ${i} 頁]`,
+                            isFullSlideImage: true,
+                            imageAnalysis
+                        });
+                        allTexts.push(descText);
+                    } else {
+                        segments.push({
+                            text: cleanPageStr,
+                            slideLabel: pdf.numPages >= 8 ? `[第 ${i} 頁]` : null,
+                            isFullSlideImage: false
+                        });
+                        allTexts.push(cleanPageStr);
+                    }
+                }
+
+                const avgCharsPerPage = allTexts.join('').length / pdf.numPages;
+                return {
+                    segments,
+                    rawText: allTexts.join('\n\n'),
+                    unitInfo: `${pdf.numPages} 頁`,
+                    isPresentation: pdf.numPages >= 6 && avgCharsPerPage < 360
+                };
+            }
+
+            if (ext === 'docx') {
+                const arrayBuffer = await file.arrayBuffer();
+                const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+                return { segments: null, rawText: result.value, unitInfo: 'Word 文件', isPresentation: false };
+            }
+
+            throw new Error(`不支援的檔案格式 (.${ext})`);
+        }
+
+        async function handleMultipleFiles(fileList) {
+            const files = Array.from(fileList);
+            if (files.length === 0) return;
+
+            const progressWrap = document.getElementById('batchProgressWrap');
+            const progressText = document.getElementById('batchProgressText');
+            const progressPct = document.getElementById('batchProgressPct');
+            const progressBar = document.getElementById('batchProgressBar');
+            const statusEl = document.getElementById('fileStatus');
+            const nameEl = document.getElementById('fileNameDisplay');
+
+            progressWrap.classList.remove('hidden');
+            statusEl.classList.add('hidden');
+
+            let successCount = 0;
+            let errorMessages = [];
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const pct = Math.round(((i + 1) / files.length) * 100);
+                progressText.textContent = `解析中 (${i + 1}/${files.length})：${file.name}`;
+                progressPct.textContent = `${pct}%`;
+                progressBar.style.width = `${pct}%`;
+
+                try {
+                    const extracted = await extractContentFromFile(file);
+                    const cleanedText = extracted.rawText.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+
+                    if ((!extracted.segments || extracted.segments.length === 0) && cleanedText.length < 15) {
+                        errorMessages.push(`${file.name}（提取內容過少）`);
+                        continue;
+                    }
+
+                    const ext = file.name.split('.').pop().toUpperCase();
+                    const reportObj = createAnalyzedReportObject({
+                        id: Date.now() + Math.random(),
+                        fileName: file.name,
+                        fileType: ext,
+                        unitInfo: extracted.unitInfo,
+                        isPresentation: extracted.isPresentation,
+                        rawText: cleanedText,
+                        preBuiltSegments: extracted.segments
+                    });
+
+                    batchReports.push(reportObj);
+                    successCount++;
+                } catch (err) {
+                    console.error(err);
+                    errorMessages.push(`${file.name}（${err.message}）`);
+                }
+            }
+
+            setTimeout(() => {
+                progressWrap.classList.add('hidden');
+                progressBar.style.width = '0%';
+            }, 500);
+
+            if (successCount > 0) {
+                statusEl.classList.remove('hidden');
+                statusEl.classList.add('inline-flex');
+                nameEl.textContent = `已累計載入 ${batchReports.length} 份報告`;
+
+                renderBatchDashboard();
+                await selectBatchReport(batchReports.length - successCount);
+
+                let msg = `成功分析 ${successCount} 份報告！`;
+                if (errorMessages.length > 0) msg += ` 另有 ${errorMessages.length} 份失敗：${errorMessages[0]}`;
+                showToast(msg, errorMessages.length > 0);
+            } else if (errorMessages.length > 0) {
+                showToast(`匯入失敗：${errorMessages[0]}`, true);
+            }
+        }
+
+        // ==========================================
+        // 內建測試範例（含人工排版瑕疵測試範例）
+        // ==========================================
+        const SAMPLE_TEXTS = {
+            hybrid: `臨床實務與倫理反思（複製貼上與人工排版瑕疵測試）：
+床 經驗，協助第一線夥伴提升判斷與應對多元病人需求的能力。【課程資訊】修 課日期：即日起 ～ （最新 資訊請見 課程頁面 ；於開課日期外上課，恕無法核發 積 分） 學分登錄時間：每週一 由開課單位上傳學員名單，遇假日則順延至下一工作日；可於修課後 14 個工作 日上網查詢積分。課程講師：台灣同志諮詢熱線 協會 杜思誠 秘書長 對談醫師：亞東醫院感染管制中心 楊家瑞主任 課程屬性：專業倫理 - 性別議題 核發學分數：1 學分 課程時長：課程影片 51 分鐘，遊戲體驗約 15 - 30 分鐘（依個人操作時間而異） 課程報名：無需報名，請點擊下方「課程頁面」連結，詳閱說明後開始上課 課程頁面：https://www.lovemyself.org.tw/article/info?id=175 【課程內容 架構】 課前測驗 10 題 、課程簡介與遊戲操作說明 第一章：愛滋基礎知識與醫療防護 - 凱文整理了「友善牙醫」名單幫助了需多感 染者可以不受任何異樣眼光下看診，自己卻也因為過往的拒診經驗猶豫是否嘗試 到新診所。
+
+憂鬱症定義（教科書摘錄）：
+憂鬱情緒或是失樂症狀，至少五項症狀：睡太多或睡太少、精神動作性激躁或遲滯、體重下降或胃口改變、喪失精力、無價值感或罪惡感、專注力思考或做決定的能力減退、反覆出現死亡或自殺想法(擷取自變態心理學四版P.108)。
+
+結論與心得（典型 AI 擴寫段落）：
+透過這次報告，我更加了解憂鬱症與焦慮症並不是單純的情緒不好，而是受到生理、心理及環境等多方面因素的影響。最後，我想透過這次報告提醒自己，也希望讓更多人知道，我們需要學習接納自己的情緒，尋求專業人員的協助，給予更多的理解、尊重與包容。`,
+
+            notebook_lm: `[第 1 頁投影片]
+數位轉型與臨床心理照護革新
+從傳統面對面諮商到 AI 輔助評估的演進路徑
+
+[第 2 頁投影片]
+核心痛點分析：當前心理健康服務面臨的三大挑戰
+資源分佈不均：偏鄉地區專業心理師與精神科醫師嚴重短缺
+病識感與污名化：傳統社會標籤導致患者延誤黃金就醫時機
+追蹤機制斷裂：單次門診難以持續掌握患者日常情緒波動
+
+[第 3 頁投影片]
+解決方案架構：建構智慧化早期預警系統
+行為指標追蹤：透過數位日誌分析睡眠與社交活動變化
+認知行為介入：提供模組化正念練習與情緒調節工具
+醫病協作平台：強化個案管理師與臨床團隊的即時溝通
+
+[第 4 頁投影片]
+預期效益與未來展望
+透過系統化導入數位評估工具，不僅能提升早期篩檢準確率，更能最大化醫療資源配置效率，打造以人為本的永續心理健康生態系。`,
+
+            pptx_case: `[第 1 頁投影片]
+Obsessive-Compulsive Disorder 強迫症個案分析：Pat Montgomery
+心理病理學期末專題簡報
+
+[第 2 頁投影片]
+皮包隔離事件：強迫症的認知扭曲
+感染源：朋友近期參加了一場喪禮
+間接接觸：該朋友來訪時，誤拿了 Pat 的皮包並短暫觸碰
+擴散恐懼：Pat 認定皮包已被「喪禮病菌」嚴重污染
+極端處置：要求丈夫將皮包從「最近的出口（窗戶）」直接扔出屋外
+長期封鎖：皮包被鎖入儲藏室長達 4 年，即使內有 200 美元現金與信用卡也絕不靠近
+
+[第 3 頁投影片]
+DSM-5 臨床診斷準則（手動摘錄）
+準則A：強迫思考反覆出現不想要的想法、衝動或影像，造成困擾。
+準則B：耗費大量時間（每日超過1小時），或造成臨床上顯著的痛苦與職業功能受損。
+準則C：這些症狀不能歸因於某種物質（例如藥物、藥品）或其他身體疾病的生理作用。
+準則D：此障礙不能以其他精神疾病的症狀更適當地解釋，自閉症類群障。`
+        };
+
+        function loadSample(type) {
+            const title = type === 'hybrid' ? '範例_人工剪貼與排版瑕疵測試.docx' : '範例_NotebookLM架構簡報.pptx';
+            const reportObj = createAnalyzedReportObject({
+                id: Date.now() + Math.random(),
+                fileName: title,
+                fileType: type === 'hybrid' ? 'DOCX' : 'PPTX',
+                unitInfo: type === 'hybrid' ? 'Word 文件' : '4 頁投影片',
+                isPresentation: type !== 'hybrid',
+                rawText: SAMPLE_TEXTS[type]
+            });
+
+            batchReports.push(reportObj);
+            document.getElementById('fileStatus').classList.remove('hidden');
+            document.getElementById('fileStatus').classList.add('inline-flex');
+            document.getElementById('fileNameDisplay').textContent = `已載入 ${batchReports.length} 份報告`;
+
+            renderBatchDashboard();
+            selectBatchReport(batchReports.length - 1);
+            showToast(`已載入範例「${title}」，請查看右下角綠色色塊標記！`);
+        }
+
+        function loadBatchSample() {
+            batchReports = [
+                createAnalyzedReportObject({
+                    id: 101,
+                    fileName: '心理三甲_第一組_NotebookLM數位心理照護.pptx',
+                    fileType: 'PPTX',
+                    unitInfo: '4 頁投影片',
+                    isPresentation: true,
+                    rawText: SAMPLE_TEXTS.notebook_lm
+                }),
+                createAnalyzedReportObject({
+                    id: 102,
+                    fileName: '心理三乙_林同學_臨床實務與複製貼上瑕疵測試.docx',
+                    fileType: 'DOCX',
+                    unitInfo: 'Word 文件',
+                    isPresentation: false,
+                    rawText: SAMPLE_TEXTS.hybrid
+                }),
+                createAnalyzedReportObject({
+                    id: 103,
+                    fileName: '心理三乙_第二組_強迫症Pat Montgomery.pptx',
+                    fileType: 'PPTX',
+                    unitInfo: '3 頁投影片',
+                    isPresentation: true,
+                    rawText: SAMPLE_TEXTS.pptx_case
+                })
+            ];
+
+            document.getElementById('fileStatus').classList.remove('hidden');
+            document.getElementById('fileStatus').classList.add('inline-flex');
+            document.getElementById('fileNameDisplay').textContent = `已載入全班 ${batchReports.length} 份範例報告`;
+
+            renderBatchDashboard();
+            selectBatchReport(1);
+            showToast('已載入全班 3 份範例報告！目前預設檢視含「人工排版瑕疵色塊標記」的報告。');
+        }
+
+        // ==========================================
+        // v5.3 核心鑑識演算法：完整偵測並同步標記所有人工複製貼上/排版瑕疵
+        // ==========================================
+        const AI_DICTIONARIES = {
+            // 已移除容易誤判的單字「也」，僅保留明確的 LLM 模板與簡報結構詞
+            templates: [
+                '現代人的生活', '隨著科技的進步', '在當今社會', '總而言之', '綜上所述', '由此可見',
+                '不僅', '除了', '之外，還包括', '等因素', '等問題', '首先，', '其次，', '最後，',
+                '另一方面', '換句話說', '簡而言之', '值得注意的是', '更重要的是', '透過這次報告',
+                '我更加了解', '我更加認同', '形成所謂的', '形成一種惡性循環', '從整體的角度',
+                '完美印證了', '帶來了根本且持久的', '關鍵基石', '重獲生活的掌控權', '打破精神上的枷鎖',
+                '清楚說明了', '交互作用', '適應困難因而持續存在', '此圖為概念性整理',
+                '核心痛點分析', '解決方案架構', '預期效益與未來展望', '演進路徑', '三大挑戰',
+                '生態系', '最大化', '系統化導入', '關鍵指標', '執行路徑', '階段性目標', '深度剖析',
+                '直面恐懼的力量', '感染源：', '間接接觸：', '擴散恐懼：', '極端處置：', '長期封鎖：'
+            ],
+            hedging: [
+                '可能', '有時', '往往', '容易', '或許', '大致', '一定程度上', '因人而異',
+                '不代表單一因果', '難以判定', '尋求專業', '專業人員的協助', '適當協助',
+                '遵照醫囑', '多一點理解', '給予更多的理解', '尊重與包容', '持續學習'
+            ]
+        };
+
+        // 專門用來萃取「所有人工複製貼上 / 手動排版瑕疵」的規則組（理由與色塊 100% 共用）
+        function extractHumanArtifacts(text) {
+            const artifacts = [];
+            const seenSubstrings = new Set();
+
+            const addArtifact = (matchStr, category) => {
+                const clean = matchStr;
+                if (!clean || clean.trim().length < 2) return;
+                if (seenSubstrings.has(clean)) return;
+                seenSubstrings.add(clean);
+                artifacts.push({ text: clean, category });
+            };
+
+            // 1. 網址來源
+            const urlMatches = text.match(/https?:\/\/[^\s\u4e00-\u9fa5）)】]+/g);
+            if (urlMatches) urlMatches.forEach(m => addArtifact(m, '直接貼上網址來源'));
+
+            // 2. 明確抄錄來源標註
+            const sourceMatches = text.match(/(?:擷取自|資料來源|附註)[：:][^\n。；）)]+/g);
+            if (sourceMatches) sourceMatches.forEach(m => addArtifact(m, '明確標註教科書/網頁抄錄來源'));
+
+            // 3. 教科書頁碼引用 (如 P.108, p. 108)
+            const pageMatches = text.match(/[Pp]\.\s*\d{1,4}/g);
+            if (pageMatches) pageMatches.forEach(m => addArtifact(m, '教科書頁碼引用'));
+
+            // 4. PDF/網頁複製貼上造成的「中文詞彙間異常半形空格」（如：修 課日期、核發 積 分、感 染者）
+            const brokenSpaceMatches = text.match(/[\u4e00-\u9fa5]{1,3}[ ]+[\u4e00-\u9fa5]{1,3}(?:[ ]+[\u4e00-\u9fa5]{1,3})?/g);
+            if (brokenSpaceMatches) {
+                brokenSpaceMatches.forEach(m => {
+                    // 排除常見英文夾雜或合理頓號分隔，精準抓取純中文字詞中間斷開的空格
+                    addArtifact(m, 'PDF/網頁複製貼上造成的中文異常斷字空格');
+                });
+            }
+
+            // 5. 全半形標點混用與冗餘標點（如 (1)、、10-15%、中文緊接半形括號/連字號/標點異常空格）
+            const punctMixPatterns = [
+                /\(\d+\)[、，．]/g,                                     // 如 (1)、
+                /\d+\s*-\s*\d+%?/g,                                    // 如 10-15% 或 15 - 30
+                /[\u4e00-\u9fa5]\([A-Za-z0-9\u4e00-\u9fa5]{1,12}\)/g,   // 中文緊接半形括號無空格
+                /[（(]\s+[\u4e00-\u9fa5]+|[\u4e00-\u9fa5]+\s+[）)；;、，]/g, // 括號或全形標點前後多餘半形空格（如： （最新 ... 頁面 ；）
+                /[，。！？；：][,.;:!?]|[,.;:!?][，。！？；：]/g          // 全半形標點緊鄰混用
+            ];
+            punctMixPatterns.forEach(regex => {
+                const found = text.match(regex);
+                if (found) found.forEach(m => addArtifact(m, '全半形標點混用或標點空格排版異常'));
+            });
+
+            // 6. 常見手動輸入錯別字或漏字
+            const typoMatches = text.match(/自責心裡|負面情情緒|情情緒|緊辎|海澱|賴像|需多|自閉症類群障(?![礙])/g);
+            if (typoMatches) typoMatches.forEach(m => addArtifact(m, '人工輸入錯別字或漏字'));
+
+            // 7. 項目編號大小寫混用 (a)...(C)
+            const caseMixMatches = text.match(/\([a-z]\)[\s\S]{1,40}\([A-Z]\)/g);
+            if (caseMixMatches) caseMixMatches.forEach(m => addArtifact(m, '條列編號大小寫混用'));
+
+            // 依長度由長到短排序，確保高亮替換時長字串優先匹配不被短字串切斷
+            artifacts.sort((a, b) => b.text.length - a.text.length);
+            return artifacts;
+        }
+
+        function getStdDev(arr) {
+            if (arr.length <= 1) return 0;
+            const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+            const variance = arr.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / arr.length;
+            return Math.sqrt(variance);
+        }
+
+        function analyzeSingleSegment(segObj, index, isPresentation = false, globalPresentationBonus = 0) {
+            if (segObj.isFullSlideImage && segObj.imageAnalysis) {
+                const imgInfo = segObj.imageAnalysis;
+                const score = imgInfo.aiScore;
+                let category = score >= 72 ? 'high' : (score >= 45 ? 'medium' : 'low');
+                return {
+                    index: index + 1,
+                    slideLabel: segObj.slideLabel,
+                    text: segObj.text,
+                    charLen: 120,
+                    avgSentLen: '0.0',
+                    stdSentLen: '0.0',
+                    aiScore: score,
+                    category,
+                    categoryLabel: imgInfo.categoryLabel,
+                    reasons: imgInfo.reasons,
+                    matchedTemplates: [],
+                    matchedHedging: [],
+                    matchedHumanArtifacts: [],
+                    isFullSlideImage: true,
+                    imageAnalysis: imgInfo,
+                    metrics: {
+                        uniformity: imgInfo.isLikelyBakedAiSlide ? 90 : 20,
+                        templates: imgInfo.isLikelyBakedAiSlide ? 88 : 15,
+                        hedging: 50,
+                        structure: imgInfo.isLikelyBakedAiSlide ? 96 : 25
+                    }
+                };
+            }
+
+            const rawText = segObj.text;
+            const slideTagMatch = rawText.match(/^\[第\s*\d+\s*頁(?:投影片)?\]\s*/);
+            const slideLabel = segObj.slideLabel || (slideTagMatch ? slideTagMatch[0].trim() : null);
+            const text = rawText.replace(/^\[第\s*\d+\s*頁(?:投影片)?\]\s*/, '').trim();
+            const charLen = text.length;
+
+            const sentences = text.split(/[。！？!?；;\n]+/).map(s => s.trim()).filter(s => s.length > 2);
+            const sentLengths = sentences.map(s => s.length);
+            const avgSentLen = sentLengths.length > 0 ? (sentLengths.reduce((a, b) => a + b, 0) / sentLengths.length) : charLen;
+            const stdSentLen = getStdDev(sentLengths);
+
+            let aiScore = isPresentation ? 44 : 35;
+            let reasons = [];
+            let matchedTemplates = [];
+            let matchedHedging = [];
+
+            // 1. 檢測 LLM 模板與簡報結構詞
+            AI_DICTIONARIES.templates.forEach(word => {
+                if (text.includes(word)) matchedTemplates.push(word);
+            });
+            if (matchedTemplates.length > 0) {
+                const templateDensity = matchedTemplates.length / Math.max(charLen / 50, 1);
+                aiScore += Math.min(36, matchedTemplates.length * 7 + templateDensity * 6);
+                reasons.push({
+                    type: 'ai',
+                    text: `命中 ${matchedTemplates.length} 個典型 LLM 模板或簡報結構詞（如「${matchedTemplates.slice(0, 4).join('」、「')}」），呈現高度標準化行文邏輯。`
+                });
+            }
+
+            // 2. 檢測防禦性語氣
+            AI_DICTIONARIES.hedging.forEach(word => {
+                if (text.includes(word)) matchedHedging.push(word);
+            });
+            if (matchedHedging.length >= 2) {
+                aiScore += Math.min(20, matchedHedging.length * 5);
+                reasons.push({
+                    type: 'ai',
+                    text: `防禦性語氣詞彙密度偏高（包含「${matchedHedging.slice(0, 4).join('」、「')}」），符合經過人類回饋強化學習（RLHF）對齊後客觀、保留的風格。`
+                });
+            }
+
+            // 3. 句長突發度與簡報模組化結構檢測
+            const colonPrefixLines = text.split('\n').filter(l => /^[\u4e00-\u9fa5A-Za-z0-9\s]{2,12}[：:]/.test(l.trim()));
+            const actionVerbLines = text.split('\n').filter(l => /^(建立|提升|強化|透過|建構|導入|優化|整合|打造|聚焦|辨識|協助)/.test(l.trim()));
+
+            if (isPresentation) {
+                if (colonPrefixLines.length >= 2) {
+                    aiScore += Math.min(24, colonPrefixLines.length * 7);
+                    reasons.push({
+                        type: 'ai',
+                        text: `本頁投影片包含 ${colonPrefixLines.length} 組「精煉短標：單句摘要（Title: Description）」平行卡片句式，為 Gemini / NotebookLM 生成簡報的最典型指紋。`
+                    });
+                }
+                if (actionVerbLines.length >= 2) {
+                    aiScore += 14;
+                    reasons.push({
+                        type: 'hybrid',
+                        text: `偵測到連續 ${actionVerbLines.length} 條以標準化動賓短語開頭的摘要條列，呈現高度濃縮的 AI 大綱重組特徵。`
+                    });
+                }
+                if (globalPresentationBonus > 0) {
+                    aiScore += globalPresentationBonus;
+                    reasons.push({
+                        type: 'ai',
+                        text: `跨投影片全局偵測：整份簡報跨頁條列密度與模組化格式高度一致（加權 +${globalPresentationBonus} 分），符合 AI 簡報工具批次生成架構。`
+                    });
+                }
+            } else if (sentences.length >= 3) {
+                if (stdSentLen < 8.5 && avgSentLen >= 22 && avgSentLen <= 55) {
+                    aiScore += 18;
+                    reasons.push({
+                        type: 'ai',
+                        text: `句長分佈極度均勻（平均句長 ${avgSentLen.toFixed(1)} 字，標準差僅 ${stdSentLen.toFixed(1)}），缺乏人類自然書寫的長短句起伏（低突發度）。`
+                    });
+                } else if (stdSentLen > 16) {
+                    aiScore -= 12;
+                    reasons.push({
+                        type: 'human',
+                        text: `句子長短起伏顯著（標準差達 ${stdSentLen.toFixed(1)}），具備較高突發度，較符合人類自然思維或直接摘錄條文的節奏。`
+                    });
+                }
+            }
+
+            // 4. 完整萃取所有人工複製貼上 / 手動排版瑕疵（與下方綠色色塊 100% 同步）
+            const matchedHumanArtifacts = extractHumanArtifacts(text);
+            let humanPenalty = 0;
+
+            if (matchedHumanArtifacts.length > 0) {
+                humanPenalty += Math.min(46, matchedHumanArtifacts.length * 8);
+                // 歸納出現的瑕疵種類，並列出前 4 個具體範例
+                const uniqueCategories = [...new Set(matchedHumanArtifacts.map(a => a.category))];
+                const sampleSnippets = matchedHumanArtifacts.slice(0, 4).map(a => `「${a.text.trim()}」`).join('、');
+
+                reasons.push({
+                    type: 'human',
+                    text: `偵測到 ${matchedHumanArtifacts.length} 處明顯的人工複製貼上或手動排版瑕疵（涵蓋：${uniqueCategories.join('、')}，例如 ${sampleSnippets}），已於下方預覽區全數以綠色色塊標示。`
+                });
+            }
+
+            if ((text.match(/\([a-hA-H]\)|準則[A-H]/g) || []).length >= 3) {
+                humanPenalty += 22;
+                reasons.push({
+                    type: 'human',
+                    text: `包含連續的診斷準則條文編號（如 準則A/B/C 或 (a)(b)(c)），且文字未經摘要壓縮，判定為直接從教科書或診斷手冊手動複製貼上。`
+                });
+            }
+
+            aiScore -= humanPenalty;
+
+            if (reasons.length === 0) {
+                reasons.push({
+                    type: 'neutral',
+                    text: `本單元未命中高頻 AI 模板詞或明顯人工剪貼瑕疵，句式結構中性，建議結合前後文脈絡判讀。`
+                });
+            }
+
+            aiScore = Math.max(5, Math.min(98, Math.round(aiScore)));
+
+            let category = 'low';
+            let categoryLabel = '人類撰寫 / 教材文獻剪貼';
+            if (aiScore >= 72) {
+                category = 'high';
+                categoryLabel = '高度疑似 AI 直接生成';
+            } else if (aiScore >= 45) {
+                category = 'medium';
+                categoryLabel = '人機協作摘要 / 潤飾';
+            }
+
+            return {
+                index: index + 1,
+                slideLabel,
+                text,
+                charLen,
+                avgSentLen: avgSentLen.toFixed(1),
+                stdSentLen: stdSentLen.toFixed(1),
+                aiScore,
+                category,
+                categoryLabel,
+                reasons,
+                matchedTemplates,
+                matchedHedging,
+                matchedHumanArtifacts,
+                isFullSlideImage: false,
+                metrics: {
+                    uniformity: sentences.length >= 2 ? Math.max(10, Math.min(98, Math.round(100 - stdSentLen * 3.5))) : 60,
+                    templates: Math.min(98, Math.round(matchedTemplates.length * 18 + 15)),
+                    hedging: Math.min(98, Math.round(matchedHedging.length * 20 + 12)),
+                    structure: Math.min(98, Math.round((colonPrefixLines.length + actionVerbLines.length) * 18 + globalPresentationBonus + 25))
+                }
+            };
+        }
+
+        function createAnalyzedReportObject({ id, fileName, fileType, unitInfo, isPresentation, rawText, preBuiltSegments = null }) {
+            let segments = preBuiltSegments;
+            if (!segments || segments.length === 0) {
+                let rawParas = rawText.split(/\n\s*\n/).map(p => p.trim()).filter(p => p.length >= 12);
+                if (rawParas.length <= 1) {
+                    rawParas = rawText.split(/\n/).map(p => p.trim()).filter(p => p.length >= 12);
+                }
+                if (rawParas.length === 0) rawParas = [rawText];
+                segments = rawParas.map(p => ({ text: p, isFullSlideImage: false }));
+            }
+
+            let globalPresentationBonus = 0;
+            if (isPresentation && segments.length >= 3) {
+                const textSegments = segments.filter(s => !s.isFullSlideImage);
+                if (textSegments.length >= 3) {
+                    const colonSlides = textSegments.filter(s => (s.text.match(/^[\u4e00-\u9fa5A-Za-z0-9\s]{2,12}[：:]/gm) || []).length >= 2).length;
+                    const totalArtifacts = textSegments.reduce((acc, s) => acc + extractHumanArtifacts(s.text).length, 0);
+                    if (colonSlides / textSegments.length >= 0.45 && totalArtifacts <= 1) {
+                        globalPresentationBonus = 15;
+                    }
+                }
+            }
+
+            const paragraphs = segments.map((seg, idx) => analyzeSingleSegment(seg, idx, isPresentation, globalPresentationBonus));
+            return recalculateReportStats({ id, fileName, fileType, unitInfo, isPresentation, rawText, paragraphs });
+        }
+
+        function recalculateReportStats(reportObj) {
+            const paragraphs = reportObj.paragraphs;
+            let totalChars = 0, highAiChars = 0, hybridChars = 0, humanChars = 0, weightedAiSum = 0;
+            let avgUniformity = 0, avgTemplates = 0, avgHedging = 0, avgStructure = 0;
+            let realTextCharCount = 0;
+
+            paragraphs.forEach(p => {
+                totalChars += p.charLen;
+                if (!p.isFullSlideImage) realTextCharCount += p.charLen;
+                weightedAiSum += p.aiScore * p.charLen;
+                if (p.category === 'high') highAiChars += p.charLen;
+                else if (p.category === 'medium') hybridChars += p.charLen;
+                else humanChars += p.charLen;
+
+                avgUniformity += p.metrics.uniformity * p.charLen;
+                avgTemplates += p.metrics.templates * p.charLen;
+                avgHedging += p.metrics.hedging * p.charLen;
+                avgStructure += p.metrics.structure * p.charLen;
+            });
+
+            const safeTotal = Math.max(totalChars, 1);
+            const highPct = Math.round((highAiChars / safeTotal) * 100);
+            const hybridPct = Math.round((hybridChars / safeTotal) * 100);
+            const humanPct = Math.max(0, 100 - highPct - hybridPct);
+            const overallAiCollabPct = Math.round(weightedAiSum / safeTotal);
+
+            let riskLevel = 'low', riskLabel = '人類主導 / 剪貼';
+            if (overallAiCollabPct >= 70) { riskLevel = 'high'; riskLabel = '高度疑似 AI 主導'; }
+            else if (overallAiCollabPct >= 45) { riskLevel = 'medium'; riskLabel = '人機協作 / 潤飾'; }
+
+            reportObj.stats = {
+                paraCount: paragraphs.length,
+                totalChars: realTextCharCount > 0 ? realTextCharCount : totalChars,
+                overallAiCollabPct,
+                highPct,
+                hybridPct,
+                humanPct,
+                riskLevel,
+                riskLabel,
+                radarMetrics: {
+                    uniformity: Math.round(avgUniformity / safeTotal),
+                    templates: Math.round(avgTemplates / safeTotal),
+                    hedging: Math.round(avgHedging / safeTotal),
+                    structure: Math.round(avgStructure / safeTotal)
+                }
+            };
+            return reportObj;
+        }
+
+        async function runSingleTextAnalysis() {
+            const rawText = textInput.value.trim();
+            if (rawText.length < 20) {
+                showToast('請先匯入報告檔案或輸入至少 20 個字以上的文本內容。', true);
+                return;
+            }
+            const isPres = rawText.includes('[第 1 頁投影片]');
+            const reportObj = createAnalyzedReportObject({
+                id: Date.now(),
+                fileName: activeReportIndex >= 0 && batchReports[activeReportIndex]
+                    ? `${batchReports[activeReportIndex].fileName} (修訂版)`
+                    : `手動貼上文本_${new Date().toLocaleTimeString('zh-TW', { hour12: false })}`,
+                fileType: isPres ? 'PPTX' : 'TEXT',
+                unitInfo: isPres ? '投影片文本' : '純文字',
+                isPresentation: isPres,
+                rawText
+            });
+
+            batchReports.push(reportObj);
+            renderBatchDashboard();
+            await selectBatchReport(batchReports.length - 1);
+            showToast('已完成文本分析並更新標記預覽！');
+        }
+
+        // ==========================================
+        // 全班批次總覽與互動切換
+        // ==========================================
+        function renderBatchDashboard() {
+            const dashboard = document.getElementById('batchDashboard');
+            if (batchReports.length === 0) {
+                dashboard.classList.add('hidden');
+                return;
+            }
+            dashboard.classList.remove('hidden');
+
+            const total = batchReports.length;
+            const avgAi = Math.round(batchReports.reduce((sum, r) => sum + r.stats.overallAiCollabPct, 0) / total);
+            const highCount = batchReports.filter(r => r.stats.riskLevel === 'high').length;
+            const hybridCount = batchReports.filter(r => r.stats.riskLevel === 'medium').length;
+            const humanCount = batchReports.filter(r => r.stats.riskLevel === 'low').length;
+
+            document.getElementById('batchAvgAi').textContent = `${avgAi}%`;
+            document.getElementById('batchTotalFiles').textContent = `共 ${total} 份報告`;
+            document.getElementById('batchHighCount').textContent = `${highCount} 份`;
+            document.getElementById('batchHybridCount').textContent = `${hybridCount} 份`;
+            document.getElementById('batchHumanCount').textContent = `${humanCount} 份`;
+
+            renderBatchTable();
+        }
+
+        function setBatchFilter(filter) {
+            currentBatchFilter = filter;
+            document.querySelectorAll('.batch-filter-btn').forEach(btn => {
+                btn.classList.toggle('ring-2', btn.dataset.bfilter === filter);
+                btn.classList.toggle('ring-indigo-500', btn.dataset.bfilter === filter);
+                btn.classList.toggle('font-bold', btn.dataset.bfilter === filter);
+            });
+            renderBatchTable();
+        }
+
+        function renderBatchTable() {
+            const tbody = document.getElementById('batchTableBody');
+            const sortBy = document.getElementById('batchSortSelect').value;
+
+            let indexedList = batchReports.map((report, idx) => ({ report, originalIndex: idx }));
+            if (currentBatchFilter !== 'all') {
+                indexedList = indexedList.filter(item => item.report.stats.riskLevel === currentBatchFilter);
+            }
+
+            indexedList.sort((a, b) => {
+                if (sortBy === 'score_desc') return b.report.stats.overallAiCollabPct - a.report.stats.overallAiCollabPct;
+                if (sortBy === 'score_asc') return a.report.stats.overallAiCollabPct - b.report.stats.overallAiCollabPct;
+                if (sortBy === 'name_asc') return a.report.fileName.localeCompare(b.report.fileName, 'zh-Hant');
+                return a.originalIndex - b.originalIndex;
+            });
+
+            if (indexedList.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400">此篩選條件下無符合的學生報告</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = indexedList.map(({ report, originalIndex }) => {
+                const s = report.stats;
+                const isSelected = originalIndex === activeReportIndex;
+                const typeBadgeMap = {
+                    'PPTX': 'bg-orange-100 text-orange-800 border-orange-200',
+                    'PDF': 'bg-rose-100 text-rose-800 border-rose-200',
+                    'DOCX': 'bg-blue-100 text-blue-800 border-blue-200',
+                    'JPG': 'bg-purple-100 text-purple-800 border-purple-200',
+                    'JPEG': 'bg-purple-100 text-purple-800 border-purple-200',
+                    'PNG': 'bg-purple-100 text-purple-800 border-purple-200'
+                };
+                const typeBadgeClass = typeBadgeMap[report.fileType] || 'bg-slate-100 text-slate-700 border-slate-200';
+
+                let riskBadgeClass = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+                let scoreTextColor = 'text-emerald-600';
+                if (s.riskLevel === 'high') { riskBadgeClass = 'bg-rose-100 text-rose-800 border-rose-200'; scoreTextColor = 'text-rose-600'; }
+                else if (s.riskLevel === 'medium') { riskBadgeClass = 'bg-amber-100 text-amber-800 border-amber-200'; scoreTextColor = 'text-amber-600'; }
+
+                return `
+                    <tr onclick="selectBatchReport(${originalIndex})" class="batch-row hover:bg-slate-50/90 transition cursor-pointer ${isSelected ? 'active-report' : ''}">
+                        <td class="py-3.5 px-4 sm:px-6 font-semibold text-slate-800">
+                            <div class="flex items-center gap-2">
+                                <span class="truncate max-w-[200px] sm:max-w-[280px]" title="${escapeHtml(report.fileName)}">${escapeHtml(report.fileName)}</span>
+                                ${isSelected ? '<span class="px-1.5 py-0.5 text-[10px] bg-indigo-600 text-white rounded font-bold shrink-0">檢視中</span>' : ''}
+                            </div>
+                        </td>
+                        <td class="py-3.5 px-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold border ${typeBadgeClass}">${escapeHtml(report.fileType)}</span></td>
+                        <td class="py-3.5 px-3 text-right text-slate-500">
+                            ${s.totalChars.toLocaleString()} 字<br>
+                            <span class="text-[10px] text-slate-400">${escapeHtml(report.unitInfo)} (${s.paraCount}單元)</span>
+                        </td>
+                        <td class="py-3.5 px-3 text-right"><span class="text-base font-extrabold ${scoreTextColor}">${s.overallAiCollabPct}%</span></td>
+                        <td class="py-3.5 px-4 hidden md:table-cell">
+                            <div class="w-44">
+                                <div class="flex justify-between text-[10px] text-slate-500 mb-1">
+                                    <span class="text-rose-600 font-semibold">AI ${s.highPct}%</span>
+                                    <span class="text-amber-600 font-semibold">協作 ${s.hybridPct}%</span>
+                                    <span class="text-emerald-600 font-semibold">人類 ${s.humanPct}%</span>
+                                </div>
+                                <div class="w-full h-2 rounded-full bg-slate-100 overflow-hidden flex">
+                                    <div style="width: ${s.highPct}%" class="bg-rose-500"></div>
+                                    <div style="width: ${s.hybridPct}%" class="bg-amber-400"></div>
+                                    <div style="width: ${s.humanPct}%" class="bg-emerald-500"></div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="py-3.5 px-4"><span class="px-2.5 py-1 rounded-full text-[11px] font-bold border ${riskBadgeClass}">${s.riskLabel}</span></td>
+                        <td class="py-3.5 px-4 text-right no-print" onclick="event.stopPropagation()">
+                            <button type="button" onclick="removeBatchReport(${originalIndex})" title="從列表移除" class="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            lucide.createIcons();
+        }
+
+        async function selectBatchReport(index) {
+            if (index < 0 || index >= batchReports.length) return;
+            activeReportIndex = index;
+            const report = batchReports[index];
+            analyzedParagraphs = report.paragraphs;
+
+            textInput.value = report.rawText;
+            updateCharCount();
+            document.getElementById('textEditorLabel').textContent = `當前檢視文本預覽（${report.fileName}）：`;
+
+            document.getElementById('currentReportTitle').textContent = `${report.fileName}（${report.unitInfo}）`;
+            document.getElementById('currentReportBadge').textContent = `全班第 ${index + 1} / ${batchReports.length} 份報告`;
+
+            updateDashboardUI(report.stats, report.isPresentation);
+            renderParagraphList('all');
+            if (analyzedParagraphs.length > 0) selectParagraphDetail(0);
+
+            document.getElementById('resultsDashboard').classList.remove('hidden');
+            document.getElementById('printBtn').classList.remove('hidden');
+            document.getElementById('printBtn').classList.add('inline-flex');
+            renderBatchTable();
+
+            const apiKey = document.getElementById('geminiApiKey').value.trim();
+            const geminiCard = document.getElementById('geminiAuditCard');
+            if (apiKey) {
+                geminiCard.classList.remove('hidden');
+                await runGeminiSemanticAudit(apiKey, report);
+            } else {
+                geminiCard.classList.add('hidden');
+            }
+        }
+
+        function removeBatchReport(index) {
+            batchReports.splice(index, 1);
+            if (batchReports.length === 0) { clearAllData(); return; }
+            renderBatchDashboard();
+            if (activeReportIndex === index) selectBatchReport(0);
+            else if (activeReportIndex > index) { activeReportIndex--; renderBatchTable(); }
+            showToast('已從列表中移除該份報告。');
+        }
+
+        function exportBatchCSV() {
+            if (batchReports.length === 0) return;
+            const headers = ['檔案名稱', '檔案格式', '頁數/單元資訊', '有效字數', '綜合AI協作佔比(%)', '高度疑似AI直出(%)', '人機協作潤飾(%)', '人類原創/純圖分享(%)', '綜合風險判定'];
+            const rows = batchReports.map(r => [
+                `"${r.fileName.replace(/"/g, '""')}"`,
+                r.fileType,
+                `"${r.unitInfo}"`,
+                r.stats.totalChars,
+                r.stats.overallAiCollabPct,
+                r.stats.highPct,
+                r.stats.hybridPct,
+                r.stats.humanPct,
+                `"${r.stats.riskLabel}"`
+            ]);
+            const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `學生報告AI協作度批次檢測結果_${new Date().toISOString().slice(0, 10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            showToast('已匯出全班分析結果 CSV 檔案！');
+        }
+
+        // ==========================================
+        // 單篇報告圖表、熱力圖與綠色瑕疵色塊高亮渲染
+        // ==========================================
+        function updateDashboardUI(stats, isPresentation = false) {
+            const unitName = isPresentation ? '頁/個簡報單元' : '個有效段落';
+            document.getElementById('docMetaSummary').textContent = `共分析 ${stats.paraCount} ${unitName} · 提取文字 ${stats.totalChars.toLocaleString()} 字`;
+            document.getElementById('totalAiPercent').textContent = `${stats.overallAiCollabPct}%`;
+
+            document.getElementById('highAiPct').textContent = `${stats.highPct}%`;
+            document.getElementById('highAiBar').style.width = `${stats.highPct}%`;
+            document.getElementById('hybridPct').textContent = `${stats.hybridPct}%`;
+            document.getElementById('hybridBar').style.width = `${stats.hybridPct}%`;
+            document.getElementById('humanPct').textContent = `${stats.humanPct}%`;
+            document.getElementById('humanBar').style.width = `${stats.humanPct}%`;
+
+            const badge = document.getElementById('overallVerdictBadge');
+            if (stats.overallAiCollabPct >= 70) {
+                badge.textContent = '高度疑似 AI 生成主導';
+                badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-800 border border-rose-200';
+            } else if (stats.overallAiCollabPct >= 45) {
+                badge.textContent = '典型人機協作 / AI 潤飾結構';
+                badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200';
+            } else {
+                badge.textContent = '以人類原創 / 純圖分享為主';
+                badge.className = 'px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200';
+            }
+
+            document.getElementById('metricUniformity').textContent = `${stats.radarMetrics.uniformity} / 100`;
+            document.getElementById('metricTemplates').textContent = `${stats.radarMetrics.templates} / 100`;
+            document.getElementById('metricHedging').textContent = `${stats.radarMetrics.hedging} / 100`;
+            document.getElementById('metricStructure').textContent = `${stats.radarMetrics.structure} / 100`;
+
+            const ctxComp = document.getElementById('compositionChart').getContext('2d');
+            if (compositionChartInstance) compositionChartInstance.destroy();
+            compositionChartInstance = new Chart(ctxComp, {
+                type: 'doughnut',
+                data: {
+                    labels: ['高度疑似 AI 生成', '人機協作潤飾', '人類原創/純圖分享'],
+                    datasets: [{
+                        data: [stats.highPct, stats.hybridPct, stats.humanPct],
+                        backgroundColor: ['#f43f5e', '#f59e0b', '#10b981'],
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '72%',
+                    plugins: { legend: { display: false } }
+                }
+            });
+
+            const ctxRadar = document.getElementById('radarChart').getContext('2d');
+            if (radarChartInstance) radarChartInstance.destroy();
+            radarChartInstance = new Chart(ctxRadar, {
+                type: 'radar',
+                data: {
+                    labels: ['句長均勻度', '模板結構詞', '防禦性語氣', '模組對稱性'],
+                    datasets: [{
+                        label: '本報告指紋強度',
+                        data: [stats.radarMetrics.uniformity, stats.radarMetrics.templates, stats.radarMetrics.hedging, stats.radarMetrics.structure],
+                        backgroundColor: 'rgba(79, 70, 229, 0.18)',
+                        borderColor: '#4f46e5',
+                        pointBackgroundColor: '#4f46e5',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        r: {
+                            min: 0,
+                            max: 100,
+                            ticks: { display: false, stepSize: 25 },
+                            pointLabels: { font: { size: 11, family: "'Noto Sans TC', sans-serif", weight: '600' }, color: '#475569' },
+                            grid: { color: '#e2e8f0' }
+                        }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+
+            generateTeacherFeedback(stats, isPresentation);
+        }
+
+        function generateTeacherFeedback(stats, isPresentation = false) {
+            const box = document.getElementById('teacherFeedbackBox');
+            const imageParas = analyzedParagraphs.filter(p => p.isFullSlideImage);
+            const bakedAiCount = imageParas.filter(p => p.imageAnalysis && p.imageAnalysis.isLikelyBakedAiSlide).length;
+            const purePhotoCount = imageParas.length - bakedAiCount;
+
+            let html = '';
+            if (imageParas.length > 0) {
+                html += `<p><strong>0. 全圖投影片與來源查核提醒：</strong>本份簡報共有 <strong>${imageParas.length} 頁</strong>為「無原生文字框之全版面圖片頁」。系統透過排版文字邊緣分析，區分出 <strong>${bakedAiCount} 頁</strong>屬於「AI 全版面圖文烘焙投影片」，另有 <strong>${purePhotoCount} 頁</strong>為「純圖片／情境分享投影片」。您可點擊左側卡片，在右側使用<strong>「複製圖片並開 Google 搜圖」</strong>確認純圖片是否為網路流傳圖片，並可一鍵改判更新分數。</p>`;
+            } else if (isPresentation) {
+                html += `<p><strong>0. 簡報架構偵測提醒：</strong>本份檔案為投影片格式，系統已針對「短標＋冒號平行卡片、動賓短語條列與跨頁模組對稱度」進行專題校準。</p>`;
+            }
+
+            if (stats.overallAiCollabPct >= 70) {
+                html += `<p><strong>1. 文本與生成模式診斷：</strong>本份報告呈現高度的 AI 輔助生成特徵（預估 AI 協作佔比達 <strong>${stats.overallAiCollabPct}%</strong>）。建議檢視其學術文獻引用深度，並可針對報告結論或架構設計進行課堂口頭追問。</p>`;
+            } else if (stats.overallAiCollabPct >= 45) {
+                html += `<p><strong>1. 文本與生成模式診斷：</strong>本份報告屬於典型的<strong>「人機協作（Human-AI Hybrid）」</strong>產物（預估 AI 協作佔比約 <strong>${stats.overallAiCollabPct}%</strong>）。學生具備基礎閱讀或資料收集，但利用 AI 進行了摘要重組或文字潤飾。</p>`;
+            } else {
+                html += `<p><strong>1. 文本與生成模式診斷：</strong>本份報告以<strong>人類自主撰寫、教材摘錄或純圖片分享</strong>為主（預估 AI 協作佔比僅 <strong>${stats.overallAiCollabPct}%</strong>），保留了自然寫作特徵或明顯的人工複製貼上排版痕跡（已於預覽區以綠色色塊標示）。</p>`;
+            }
+            box.innerHTML = html;
+        }
+
+        function copyFeedback() {
+            const text = document.getElementById('teacherFeedbackBox').innerText;
+            const tempArea = document.createElement('textarea');
+            tempArea.value = text;
+            document.body.appendChild(tempArea);
+            tempArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempArea);
+            showToast('已將講評建議複製到剪貼簿！');
+        }
+
+        function renderParagraphList(filterType) {
+            const listEl = document.getElementById('paragraphList');
+            listEl.innerHTML = '';
+
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.toggle('ring-2', btn.dataset.filter === filterType);
+                btn.classList.toggle('ring-indigo-500', btn.dataset.filter === filterType);
+                btn.classList.toggle('font-bold', btn.dataset.filter === filterType);
+            });
+
+            const filtered = analyzedParagraphs.filter(p => filterType === 'all' || p.category === filterType);
+            if (filtered.length === 0) {
+                listEl.innerHTML = `<div class="text-center py-8 text-xs text-slate-400">此分類下無符合的單元</div>`;
+                return;
+            }
+
+            filtered.forEach((p) => {
+                const realIdx = p.index - 1;
+                let borderClass = 'border-emerald-400 bg-emerald-50/30';
+                let badgeClass = 'bg-emerald-100 text-emerald-800';
+                if (p.category === 'high') { borderClass = 'border-rose-500 bg-rose-50/40'; badgeClass = 'bg-rose-100 text-rose-800'; }
+                else if (p.category === 'medium') { borderClass = 'border-amber-400 bg-amber-50/40'; badgeClass = 'bg-amber-100 text-amber-800'; }
+
+                const card = document.createElement('div');
+                card.id = `para-card-${realIdx}`;
+                card.className = `heatmap-para p-3.5 rounded-xl border border-slate-200/80 ${borderClass} cursor-pointer`;
+                card.onclick = () => selectParagraphDetail(realIdx);
+
+                let thumbHtml = '';
+                if (p.isFullSlideImage && p.imageAnalysis && p.imageAnalysis.dataUrl) {
+                    thumbHtml = `<img src="${p.imageAnalysis.dataUrl}" alt="投影片縮圖" class="w-24 h-14 object-cover rounded-lg border border-slate-300 shrink-0 bg-slate-900">`;
+                }
+
+                // 若該段有人工排版瑕疵，在卡片上顯示小提示徽章
+                const artifactBadge = (p.matchedHumanArtifacts && p.matchedHumanArtifacts.length > 0)
+                    ? `<span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-semibold">含 ${p.matchedHumanArtifacts.length} 處人工排版瑕疵</span>`
+                    : '';
+
+                card.innerHTML = `
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="flex-grow min-w-0">
+                            <div class="flex flex-wrap items-center gap-1.5 mb-1.5">
+                                <span class="text-xs font-bold text-slate-700">${p.slideLabel ? escapeHtml(p.slideLabel) : `第 ${p.index} 段`}</span>
+                                <span class="px-2 py-0.5 rounded text-[11px] font-semibold ${badgeClass}">${escapeHtml(p.categoryLabel)}</span>
+                                ${artifactBadge}
+                            </div>
+                            <p class="text-xs text-slate-600 line-clamp-3 leading-relaxed">${escapeHtml(p.text)}</p>
+                        </div>
+                        <div class="flex flex-col items-end gap-1.5 shrink-0">
+                            <span class="text-xs font-extrabold text-slate-700">AI ${p.aiScore}%</span>
+                            ${thumbHtml}
+                        </div>
+                    </div>
+                `;
+                listEl.appendChild(card);
+            });
+        }
+
+        function filterParagraphs(type) { renderParagraphList(type); }
+
+        // ==========================================
+        // 精準多類別文本色塊標記引擎（單次掃描避免 HTML 標籤互相干擾）
+        // ==========================================
+        function buildHighlightedHtml(p) {
+            const rawText = p.text;
+            const spans = []; // { start, end, type, label }
+
+            const collectSpans = (substring, type, label) => {
+                if (!substring || substring.length === 0) return;
+                let pos = 0;
+                while ((pos = rawText.indexOf(substring, pos)) !== -1) {
+                    spans.push({ start: pos, end: pos + substring.length, type, label });
+                    pos += substring.length;
+                }
+            };
+
+            // 1. 收集所有人類複製貼上 / 手動排版瑕疵（優先權最高，以綠色色塊標示）
+            if (p.matchedHumanArtifacts && p.matchedHumanArtifacts.length > 0) {
+                p.matchedHumanArtifacts.forEach(art => {
+                    collectSpans(art.text, 'human', `人工複製貼上/排版瑕疵：${art.category}`);
+                });
+            }
+
+            // 2. 收集 AI 模板 / 簡報結構詞（紅色色塊）
+            if (p.matchedTemplates && p.matchedTemplates.length > 0) {
+                p.matchedTemplates.forEach(w => {
+                    collectSpans(w, 'ai', `AI 模板/簡報結構詞：「${w}」`);
+                });
+            }
+
+            // 3. 收集防禦性助動詞（黃色色塊）
+            if (p.matchedHedging && p.matchedHedging.length > 0) {
+                p.matchedHedging.forEach(w => {
+                    collectSpans(w, 'hedging', `防禦性語氣詞彙：「${w}」`);
+                });
+            }
+
+            if (spans.length === 0) {
+                return escapeHtml(rawText);
+            }
+
+            // 依起始位置排序；若起點相同，優先保留「人類瑕疵 (human)」與較長的片段，避免重疊破壞 HTML
+            const priority = { human: 3, ai: 2, hedging: 1 };
+            spans.sort((a, b) => {
+                if (a.start !== b.start) return a.start - b.start;
+                if (priority[b.type] !== priority[a.type]) return priority[b.type] - priority[a.type];
+                return (b.end - b.start) - (a.end - a.start);
+            });
+
+            // 過濾掉與前一個已採用色塊重疊的區間
+            const nonOverlapping = [];
+            let lastEnd = 0;
+            for (const sp of spans) {
+                if (sp.start >= lastEnd) {
+                    nonOverlapping.push(sp);
+                    lastEnd = sp.end;
+                }
+            }
+
+            // 組合最終 HTML
+            let resultHtml = '';
+            let cursor = 0;
+            for (const sp of nonOverlapping) {
+                if (sp.start > cursor) {
+                    resultHtml += escapeHtml(rawText.slice(cursor, sp.start));
+                }
+                const segmentStr = escapeHtml(rawText.slice(sp.start, sp.end));
+                const titleAttr = escapeHtml(sp.label);
+
+                if (sp.type === 'human') {
+                    resultHtml += `<mark title="${titleAttr}" class="bg-emerald-200/95 text-emerald-950 border-b-2 border-emerald-500 px-1 py-0.5 rounded font-medium">${segmentStr}</mark>`;
+                } else if (sp.type === 'ai') {
+                    resultHtml += `<mark title="${titleAttr}" class="bg-rose-200/85 text-rose-950 px-1 py-0.5 rounded">${segmentStr}</mark>`;
+                } else {
+                    resultHtml += `<mark title="${titleAttr}" class="bg-amber-200/85 text-amber-950 px-1 py-0.5 rounded">${segmentStr}</mark>`;
+                }
+                cursor = sp.end;
+            }
+            if (cursor < rawText.length) {
+                resultHtml += escapeHtml(rawText.slice(cursor));
+            }
+
+            return resultHtml;
+        }
+
+        function selectParagraphDetail(idx) {
+            currentSelectedParaIdx = idx;
+            const p = analyzedParagraphs[idx];
+            if (!p) return;
+
+            document.querySelectorAll('.heatmap-para').forEach(el => el.classList.remove('selected'));
+            const activeCard = document.getElementById(`para-card-${idx}`);
+            if (activeCard) activeCard.classList.add('selected');
+
+            document.getElementById('detailParaIndex').textContent = p.slideLabel ? p.slideLabel.replace(/[\[\]]/g, '') : `第 ${p.index} 段`;
+            document.getElementById('detailCategoryLabel').textContent = p.categoryLabel;
+
+            const scoreEl = document.getElementById('detailScore');
+            scoreEl.textContent = `${p.aiScore}%`;
+            scoreEl.className = p.category === 'high' ? 'text-2xl font-extrabold text-rose-600' :
+                                p.category === 'medium' ? 'text-2xl font-extrabold text-amber-600' :
+                                'text-2xl font-extrabold text-emerald-600';
+
+            const imgSection = document.getElementById('detailImageSection');
+            const metricsGrid = document.getElementById('detailMetricsGrid');
+            const textPreviewWrap = document.getElementById('detailTextPreviewWrap');
+
+            if (p.isFullSlideImage && p.imageAnalysis) {
+                imgSection.classList.remove('hidden');
+                metricsGrid.classList.add('hidden');
+                textPreviewWrap.classList.add('hidden');
+                document.getElementById('detailImagePreview').src = p.imageAnalysis.dataUrl;
+                document.getElementById('detailImageDims').textContent = p.imageAnalysis.ratioText;
+            } else {
+                imgSection.classList.add('hidden');
+                metricsGrid.classList.remove('hidden');
+                textPreviewWrap.classList.remove('hidden');
+
+                document.getElementById('detailCharLen').textContent = `${p.charLen} 字`;
+                document.getElementById('detailAvgSent').textContent = `${p.avgSentLen} 字`;
+                document.getElementById('detailStdSent').textContent = p.stdSentLen;
+
+                document.getElementById('detailHighlightedText').innerHTML = buildHighlightedHtml(p);
+            }
+
+            const reasonsEl = document.getElementById('detailReasons');
+            reasonsEl.innerHTML = p.reasons.map(r => {
+                const icon = r.type === 'ai' ? '🔴' : r.type === 'hybrid' ? '🟠' : r.type === 'human' ? '🟢' : '⚪';
+                return `<li class="flex items-start gap-2 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                    <span class="shrink-0 mt-0.5">${icon}</span>
+                    <span>${escapeHtml(r.text)}</span>
+                </li>`;
+            }).join('');
+
+            lucide.createIcons();
+        }
+
+        // ==========================================
+        // 一鍵以圖搜圖與教師人工覆核改判
+        // ==========================================
+        async function copyCurrentImageToClipboard() {
+            const p = analyzedParagraphs[currentSelectedParaIdx];
+            if (!p || !p.imageAnalysis || !p.imageAnalysis.dataUrl) return false;
+            try {
+                const img = new Image();
+                await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = p.imageAnalysis.dataUrl; });
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth || 1280;
+                canvas.height = img.naturalHeight || 720;
+                canvas.getContext('2d').drawImage(img, 0, 0);
+                const pngBlob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+                if (navigator.clipboard && window.ClipboardItem) {
+                    await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
+                    return true;
+                }
+            } catch (err) {
+                console.warn('剪貼簿寫入受限:', err);
+            }
+            return false;
+        }
+
+        async function searchWithGoogleLens() {
+            const copied = await copyCurrentImageToClipboard();
+            window.open('https://lens.google.com/', '_blank', 'noopener,noreferrer');
+            if (copied) {
+                showToast('已將投影片原圖複製到剪貼簿！請在開啟的 Google 智慧鏡頭頁面按 Ctrl+V (Mac: Cmd+V) 貼上搜圖。');
+            } else {
+                showToast('已開啟 Google 智慧鏡頭！若瀏覽器限制自動複製，請先點擊下方「下載此頁原始圖檔」再拖曳上傳搜圖。');
+            }
+        }
+
+        async function searchWithBingVisual() {
+            const copied = await copyCurrentImageToClipboard();
+            window.open('https://www.bing.com/visualsearch', '_blank', 'noopener,noreferrer');
+            if (copied) {
+                showToast('已複製圖片並開啟 Bing 視覺搜尋！請在新分頁按 Ctrl+V (Mac: Cmd+V) 貼上比對來源。');
+            } else {
+                showToast('已開啟 Bing 視覺搜尋頁面！可下載原圖後直接拖曳比對。');
+            }
+        }
+
+        function downloadCurrentSlideImage() {
+            const p = analyzedParagraphs[currentSelectedParaIdx];
+            if (!p || !p.imageAnalysis || !p.imageAnalysis.dataUrl) return;
+            const link = document.createElement('a');
+            link.href = p.imageAnalysis.dataUrl;
+            link.download = `slide_${p.index}_evidence.png`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast('已下載此頁投影片原始圖檔 (.png)！');
+        }
+
+        function overrideImageVerdict(verdictType) {
+            const p = analyzedParagraphs[currentSelectedParaIdx];
+            if (!p || !p.isFullSlideImage) return;
+
+            if (verdictType === 'human') {
+                p.aiScore = 10;
+                p.category = 'low';
+                p.categoryLabel = '教師已查核：網路流傳 / 自拍原圖（非 AI 生成）';
+                p.imageAnalysis.isLikelyBakedAiSlide = false;
+                p.reasons = [{
+                    type: 'human',
+                    text: '【教師人工覆核改判】經以圖搜圖或視覺查核，確認本頁為學生引用之網路照片或自拍情境圖，非 AI 生成內容（已降為 10%）。'
+                }];
+                showToast('已改判為「非 AI 原圖分享」，全篇與全班統計數據已即時重算！');
+            } else {
+                p.aiScore = 96;
+                p.category = 'high';
+                p.categoryLabel = '教師已查核：確認為 AI 生成圖文投影片';
+                p.imageAnalysis.isLikelyBakedAiSlide = true;
+                p.reasons = [{
+                    type: 'ai',
+                    text: '【教師人工覆核改判】確認本頁為 AI 工具（如 Gemini Notebook）整頁生成之圖文投影片（已調整為 96%）。'
+                }];
+                showToast('已改判為「AI 生成圖文」，全篇與全班統計數據已即時重算！');
+            }
+
+            if (activeReportIndex >= 0 && batchReports[activeReportIndex]) {
+                recalculateReportStats(batchReports[activeReportIndex]);
+                updateDashboardUI(batchReports[activeReportIndex].stats, batchReports[activeReportIndex].isPresentation);
+                renderBatchDashboard();
+            }
+            renderParagraphList('all');
+            selectParagraphDetail(currentSelectedParaIdx);
+        }
+
+        async function runGeminiSemanticAudit(apiKey, report) {
+            const contentEl = document.getElementById('geminiAuditContent');
+            contentEl.innerHTML = `<div class="flex items-center gap-2 text-indigo-200"><i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> 正在透過 Gemini 進行深度語意與視覺審計...</div>`;
+            lucide.createIcons();
+
+            try {
+                const parts = [{
+                    text: `你是一位專精於大學學術寫作與多模態 AI 鑑識的教授。本地系統評估這份學生報告「${report.fileName}」的 AI 協作度約為 ${report.stats.overallAiCollabPct}%。請用繁體中文給出約 150-200 字的精準審計意見，指出：1. 報告中最明顯的 AI 生成或人機協作指紋；2. 若有附上全版面圖片投影片，請檢查畫面是否有 AI 生成痕跡或文字渲染錯字。`
+                }];
+
+                if (report.rawText && report.rawText.length > 20) {
+                    parts.push({ text: `\n報告提取文本：\n${report.rawText.slice(0, 5000)}` });
+                }
+
+                const imgParas = report.paragraphs.filter(p => p.isFullSlideImage && p.imageAnalysis && p.imageAnalysis.dataUrl).slice(0, 2);
+                imgParas.forEach(p => {
+                    const base64Data = p.imageAnalysis.dataUrl.split(',')[1];
+                    const mimeType = p.imageAnalysis.dataUrl.split(';')[0].replace('data:', '');
+                    if (base64Data) parts.push({ inline_data: { mime_type: mimeType, data: base64Data } });
+                });
+
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts }] })
+                });
+
+                const data = await response.json();
+                if (data.error) throw new Error(data.error.message || 'API 呼叫失敗');
+                const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || '無法取得語意分析結果。';
+                contentEl.innerHTML = `<p class="whitespace-pre-line">${escapeHtml(reply)}</p>`;
+            } catch (err) {
+                contentEl.innerHTML = `<p class="text-rose-300 text-xs">Gemini API 連線失敗（${escapeHtml(err.message)}），已維持使用本地端鑑識結果。</p>`;
+            }
+        }
+
+        function escapeHtml(str) {
+            return String(str).replace(/&/g, '&amp;')
+                              .replace(/</g, '&lt;')
+                              .replace(/>/g, '&gt;')
+                              .replace(/"/g, '&quot;')
+                              .replace(/'/g, '&#039;');
+        }
+    </script>
+</body>
+</html>
